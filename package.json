@@ -1,0 +1,19 @@
+{
+  "name": "goonpilot",
+  "private": true,
+  "license": "WTFPL",
+  "version": "0.1.0",
+  "description": "Personal booru viewer. Local server; the only packages are the optional image-analysis ones (onnxruntime-node, sharp).",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/foryou.test.mjs test/profiles.test.mjs test/vision.test.mjs test/download.test.mjs"
+  },
+  "optionalDependencies": {
+    "onnxruntime-node": "^1.20.0",
+    "sharp": "^0.33.0"
+  }
+}

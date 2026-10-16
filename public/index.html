@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b0a0e">
+<title>Goonpilot</title>
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="bar">
+  <div class="row">
+    <div class="brand">Goonpilot<span>.</span></div>
+    <div class="search">
+      <input id="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false"
+        placeholder="Add tag (− exclude, ~ OR)" aria-label="Add tag. Enter on an empty box searches">
+      <div class="suggest" id="suggest" hidden></div>
+    </div>
+    <button class="btn searchbtn" id="searchBtn" title="Search (Enter)">Search</button>
+    <button class="btn forbtn" id="forBtn" title="Recommendations based on your likes (beta)" hidden>✦ For you <small>beta</small></button>
+    <select class="fy-only" id="profileSel" title="For you profile (each has its own likes and dislikes)" aria-label="For you profile"></select>
+    <button class="btn ghost fy-only likedbtn" id="likedBtn" title="Posts you voted on">♥ Liked</button>
+    <button class="iconbtn fy-only" id="hintBtn" title="Show/hide the hotkey bar" aria-label="Show or hide the hotkey bar">⌨</button>
+    <button class="iconbtn" id="libBtn" title="Saved searches and supertags" aria-label="Saved searches and supertags">★</button>
+    <button class="iconbtn" id="setBtn" title="Settings" aria-label="Settings">⚙</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="filters">
+    <div class="seg" id="sites" role="group" aria-label="Sites to search"></div>
+    <label>Sort <select id="sort">
+      <option value="id">Newest</option><option value="score">Score</option><option value="updated">Updated</option><option value="random">Random</option><option value="phone">Fits my screen</option>
+    </select></label>
+    <div class="seg" id="rating" role="group" aria-label="Rating">
+      <button data-r="all" class="on">All</button><button data-r="safe">Safe</button><button data-r="questionable">Quest.</button><button data-r="explicit">Expl.</button>
+    </div>
+    <div class="seg" id="orient" role="group" aria-label="Shape"><button data-o="any" class="on">Any shape</button><button data-o="portrait">▯ Portrait</button><button data-o="landscape">▭ Landscape</button></div>
+    <label>Min score <input id="minScore" type="number" inputmode="numeric" min="0" step="10" value="0"></label>
+  </div>
+  <div class="fybar" id="fyBar" hidden>
+    <div class="seg" id="fyMode" role="group" aria-label="For you mode">
+      <button data-m="balanced" title="Mostly your taste, some surprises">Balanced</button><button data-m="comfort" title="Stay close to what you like">Comfort</button><button data-m="explore" title="Lots of new things">Explore</button>
+    </div>
+    <div class="seg" id="fyMedia" role="group" aria-label="Media type">
+      <button data-t="all">All</button><button data-t="image">Images</button><button data-t="video">Videos</button>
+    </div>
+    <button class="iconbtn" id="fyDebugBtn" title="Debug: explain why each post was picked" aria-label="Debug mode" aria-pressed="false">🐞 Debug</button>
+    <button class="iconbtn" id="fyPeekBtn" title="Peek: browse without marking posts as seen or analysing them (votes still count)" aria-label="Peek mode" aria-pressed="false">👁 Peek</button>
+    <button class="iconbtn" id="fyHelpBtn" title="How the modes work" aria-label="How the modes work" aria-expanded="false">?</button>
+    <button class="iconbtn" id="fyWlBtn" aria-expanded="false" title="Must-have tags: every post contains ALL of them">✓ Must have</button>
+    <button class="iconbtn" id="fyBlBtn" aria-expanded="false" title="Never show posts with these tags (For you only)">⛔ Never show</button>
+    <button class="iconbtn" id="fyNextBtn" aria-pressed="true" title="After voting, jump to the next post">⏭ Next after vote</button>
+    <button class="iconbtn" id="fyTasteBtn" aria-expanded="false" title="See which tags weigh the most in your taste profile">📊 Taste</button>
+    <button class="iconbtn" id="fyBoostBtn" aria-expanded="false" title="Favorite tags, artists and characters">🎯 Favorites</button>
+    <button class="iconbtn" id="fyScoreBtn" aria-expanded="false" title="Only show posts with a score above a number, per site">▲ Min score</button>
+    <button class="iconbtn" id="fyIgnBtn" aria-expanded="false" title="Ignore whole tag types: not learned, scored or searched">🚫 Ignore ▾</button>
+    <span class="divepill" id="fyDive" hidden><span id="fyDiveText"></span> <button class="mini" id="fyDiveEnd">End</button></span>
+  </div>
+<div class="fypanel" id="fyPanel" hidden></div>
+<div class="fybar" id="likedBar" hidden>
+    <div class="seg" id="likedFilter" role="group" aria-label="Which votes">
+      <button data-f="likes">Liked</button><button data-f="super">⭐ Super</button><button data-f="dislikes">Disliked</button><button data-f="all">All voted</button>
+    </div>
+    <button class="iconbtn" id="selBtn" aria-pressed="false" title="Pick posts to download">☑ Select</button>
+    <button class="iconbtn" id="selAllBtn" hidden>Select all loaded</button>
+    <button class="iconbtn" id="dlSelBtn" hidden>⬇ Download selected</button>
+    <button class="iconbtn" id="dlListBtn" title="Download a small spreadsheet (CSV) of links and tags for this filter">⬇ List (CSV)</button>
+    <button class="iconbtn" id="dlAllBtn" title="Download everything in this filter as a ZIP">⬇ Download all</button>
+    <span class="hint" id="likedInfo"></span>
+  </div>
+<div class="fyhelp" id="fyHelp" hidden>
+    <h3>How "For you" works</h3>
+    <p><b>Like (8) / Dislike (2)</b> teach it your taste; <b>Super like (9)</b> and <b>Super dislike (3)</b> count much more. The more you vote, the better the picks. A few votes in a row also shift what you see right now, a little.</p>
+    <p><b>Balanced</b>: mostly things close to your likes, with a surprise every 4th post.<br>
+    <b>Comfort</b>: stays close to what you already like, few surprises.<br>
+    <b>Explore</b>: lots of new things, every 2nd post is a discovery.</p>
+    <p><b>Images / Videos</b>: only show that media type.<br>
+    <b>🧭 Deep Dive</b>: on any post, shows posts similar to just that one. Your votes barely change your long-term taste while diving. Press End to leave.</p>
+    <p>Each post says why it was picked. Batches are small (set in Settings) so each vote improves the next batch. Settings → For you shows what it has learned and whether it is working.</p>
+  </div>
+</header>
+
+<div class="status" id="status"></div>
+<main class="results" id="results"></main>
+<div class="sentinel" id="sentinel"></div>
+<div class="end" id="end" hidden></div>
+
+<div id="sheetRoot" hidden>
+  <div class="sheet-bg" id="sheetBg"></div>
+  <section class="sheet" role="dialog" aria-label="Library and settings">
+    <div class="tabs"><button data-tab="saved" class="on">Saved</button><button data-tab="history">History</button><button data-tab="artists">Favorites</button><button data-tab="super">Supertags</button><button data-tab="settings">Settings</button></div>
+    <div id="sheetBody"></div>
+  </section>
+</div>
+
+<div id="viewerRoot" hidden>
+  <div class="viewer" id="viewer">
+    <div class="vscroll" id="vscroll"></div>
+    <aside class="details" id="details"></aside>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="vClose" aria-label="Close viewer">✕</button>
+    <span class="count" id="vCount"></span>
+    <span class="spacer"></span>
+    <button class="iconbtn wide" id="vSound" title="Sound" aria-label="Toggle sound">🔇</button>
+    <button class="iconbtn fy-only" id="vBar" title="Show/hide the vote buttons" aria-label="Show or hide the vote buttons" aria-pressed="true">🎚</button>
+    <button class="iconbtn fy-only" id="vHint" title="Show/hide the hotkey bar" aria-label="Show or hide the hotkey bar">⌨</button>
+    <button class="iconbtn fy-only" id="vGest" title="What the gestures do" aria-label="Gesture help" aria-expanded="false">?</button>
+    <button class="iconbtn fy-only" id="vDive" title="Deep Dive: more like this post" aria-label="Deep Dive">🧭</button>
+    <button class="iconbtn fy-only vote sdn" id="vSDislike" title="Super dislike (3)" aria-label="Super dislike">⛔</button>
+    <button class="iconbtn fy-only vote up" id="vLike" title="Like (8)" aria-label="Like">👍</button>
+    <button class="iconbtn fy-only vote dn" id="vDislike" title="Dislike (2)" aria-label="Dislike">👎</button>
+    <button class="iconbtn fy-only vote sup" id="vSuper" title="Super like (9)" aria-label="Super like">⭐</button>
+    <button class="iconbtn" id="vAuto" title="Auto-advance">Auto</button>
+    <button class="iconbtn" id="vInfo" title="Tags and details">Tags</button>
+  </div>
+  <div class="gesthelp" id="gestHelp" hidden role="note"></div>
+  <div class="loadtag" id="vLoad" hidden>loading more…</div>
+</div>
+<div class="hintbar" id="hintBar" role="note" title="Click to hide" hidden></div>
+</body>
+</html>

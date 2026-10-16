@@ -1,0 +1,12 @@
+# Copy this file to .dev.vars and fill in your own values.
+# Find them on rule34.xxx: My Account > Options > API Access Credentials
+RULE34_API_KEY=
+RULE34_USER_ID=
+
+# e621 (login needed for images). API key: e621.net > Account > Manage API Access
+E621_USERNAME=
+E621_API_KEY=
+
+# e6ai (same software as e621). API key: e6ai.net > Account > Manage API Access
+E6AI_USERNAME=
+E6AI_API_KEY=
