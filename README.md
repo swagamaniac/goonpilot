@@ -55,6 +55,8 @@ It prints an `https://….ts.net` address. Open it on the phone with the Tailsca
 
 The computer must stay awake and the server running while you use the phone.
 
+**Windows:** `start-phone.bat` also runs `keepawake.ps1` in the background. It stops Windows from going to sleep while the server (node) is running, so the phone can still reach it. It changes no power settings: the stay-awake request disappears by itself when the server stops, and your normal sleep settings come back. On macOS and Linux, turn off sleep yourself while using the phone (for example `caffeinate -s` on macOS)
+
 ## Image analysis (optional)
 Lets the app read the look and tags of pictures to improve "For you". It runs fully on your computer; the AI model (~470 MB) is downloaded once.
 
