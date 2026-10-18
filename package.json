@@ -9,8 +9,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.mjs",
-    "test": "node --test test/foryou.test.mjs test/profiles.test.mjs test/vision.test.mjs test/download.test.mjs"
+    "start": "node server.mjs"
   },
   "optionalDependencies": {
     "onnxruntime-node": "^1.20.0",

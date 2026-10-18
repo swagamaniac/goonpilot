@@ -43,7 +43,6 @@ export function dHash(gray) {
   let hex = ''; for (let i = 0; i < 64; i += 4) hex += parseInt(bits.slice(i, i + 4), 2).toString(16);
   return hex;
 }
-export const hamming = (a, b) => { let d = 0; for (let i = 0; i < 16; i++) { let x = parseInt(a[i], 16) ^ parseInt(b[i], 16); while (x) { d += x & 1; x >>= 1; } } return d; };
 
 export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
   const file = path.join(dir, 'vision.json'), modelDir = path.join(dir, 'models');

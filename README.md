@@ -95,7 +95,6 @@ Back up `data/` if you care about it. Never share `data/` or `.dev.vars`. Both a
 - `src/api.mjs`: API proxy; `src/sources/`: one adapter per site
 - `src/foryou.mjs`: the "For you" recommender
 - `public/`: the app (plain JavaScript, no libraries)
-- Tests: `npm test`
 
 ## License
 [![WTFPL](public/img/wtfpl-badge-88x31.png)](http://www.wtfpl.net/)
