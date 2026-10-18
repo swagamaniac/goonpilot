@@ -1271,10 +1271,19 @@ function renderSheet() {
     );
     body.append(renderForYouSettings());
     for (const src of S.status?.sources || []) {
-      body.append(src.configured
-        ? el('p', 'ok', `${src.label}: ${src.auth} ✓`)
-        : el('p', 'hint', `${src.label}: ${src.auth}. Add ${src.label === 'rule34' ? 'RULE34_API_KEY and RULE34_USER_ID' : src.label.toUpperCase() + '_USERNAME and ' + src.label.toUpperCase() + '_API_KEY'} to .dev.vars next to server.mjs and restart the server.`));
+      body.append(el('p', src.configured ? 'ok' : 'hint', `${src.label}: ${src.auth}`));
+      if (!src.keys?.length) continue;
+      const inputs = src.keys.map(k => { const i = el('input'); i.type = 'password'; i.autocomplete = 'off'; i.placeholder = `${k.name} (${k.set ? 'set' : 'not set'})`; i.dataset.k = k.name; return i; });
+      const save = el('button', 'btn', 'Save');
+      save.onclick = async () => {
+        const vals = Object.fromEntries(inputs.filter(i => i.value.trim()).map(i => [i.dataset.k, i.value.trim()]));
+        if (!Object.keys(vals).length) return;
+        try { await fyJson('keys', vals, undefined, '/api/'); S.status = await api.status(); toast(`${src.label} login saved to .dev.vars`); } catch (err) { toast(err.message); }
+        renderSheet();
+      };
+      const row = el('div', 'field'); row.append(...inputs, save); body.append(row);
     }
+    body.append(el('p', 'hint', 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login.'));
     body.append(el('p', 'hint', 'e621 and e6ai images are loaded through your local server with your login.'));
     const rs = el('button', 'btn', '↻ Restart server (start-phone.bat)');
     rs.onclick = async () => {

@@ -274,10 +274,21 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     ctx.vision.setEnabled(url.searchParams.get('on') !== '0'); return json(await ctx.vision.status());
   }
   if (url.pathname.startsWith('/api/foryou/')) return handleForYou(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.profiles, ctx.vision, ctx.library);
+  if (url.pathname === '/api/keys' && request.method === 'POST') {
+    const bad = guardPrivate(request, url); if (bad) return bad;
+    if (!ctx.saveVars) return json({ error: 'Logins can only be changed on the computer running the server' }, 403);
+    const [b, err] = await readBody(request); if (err) return err;
+    const allowed = new Set(Object.values(SOURCES).flatMap(s => s.envKeys)), vals = {};
+    for (const [k, v] of Object.entries(b)) {
+      if (!allowed.has(k) || typeof v !== 'string' || v.length > 200 || /[\r\n#"']/.test(v)) return json({ error: 'Invalid value' }, 400);
+      vals[k] = v.trim();
+    }
+    ctx.saveVars(vals); return json({ ok: true });
+  }
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {
-    return json({ sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env) })) });
+    return json({ sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })) })) });
   }
 
   const m = /^\/api\/([a-z0-9_-]+)\/(posts|suggest|media|tagcheck)$/.exec(url.pathname);

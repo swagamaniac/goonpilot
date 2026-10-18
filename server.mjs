@@ -32,6 +32,16 @@ function loadVars() {
   return env;
 }
 const env = loadVars();
+function saveVars(vals) {
+  const file = path.join(ROOT, '.dev.vars');
+  const lines = existsSync(file) ? readFileSync(file, 'utf8').trimEnd().split(/\r?\n/) : [];
+  for (const [k, v] of Object.entries(vals)) {
+    const i = lines.findIndex(l => new RegExp(`^\\s*${k}\\s*=`).test(l));
+    if (i >= 0) lines[i] = `${k}=${v}`; else lines.push(`${k}=${v}`);
+    env[k] = v;
+  }
+  writeFileSync(file, lines.join('\n') + '\n');
+}
 const vision = createVision({ dir: path.join(ROOT, 'data'), fetchImpl: (u, o) => timedFetch(u, o), log: (type, msg) => logLine(`${String(type).padEnd(7)} ${msg}`) });
 const visionImport = () => {
   const f = path.join(ROOT, 'data', 'ai-tags-import.json'); if (!existsSync(f)) return 0;
@@ -174,7 +184,7 @@ const server = http.createServer(async (req, res) => {
       for (const h of ['origin', 'x-goonpilot', 'sec-fetch-site']) if (req.headers[h]) fwd[h] = req.headers[h];
       const request = new Request(url, { method: req.method, headers: fwd, body, signal: ac.signal });
       const t0 = Date.now(), tag = url.pathname.replace(/^\/api\//, '').slice(0, 60) + (/media$/.test(url.pathname) ? ' ' + (() => { try { return new URL(url.searchParams.get('u')).host; } catch { return ''; } })() : '');
-      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, library, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
+      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
       res.writeHead(response.status, { ...SECURITY_HEADERS, ...Object.fromEntries(response.headers) });
       const ttfb = Date.now() - t0; let bytes = 0;
       res.on('close', () => logLine(`api     ${response.status} ttfb=${ttfb}ms total=${Date.now() - t0}ms ${(bytes / 1024) | 0}KB ${req.method} ${tag}${res.writableFinished ? '' : ' ABORTED'}`));
