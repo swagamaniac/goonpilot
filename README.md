@@ -17,7 +17,7 @@ cd <the folder>
 
 | System | How |
 |---|---|
-| **Windows** | Double-click `start.bat` |
+| **Windows** | Double-click `launchers\start.bat` |
 | **macOS** | Open Terminal in the folder, run `node server.mjs` |
 | **Linux** | Open a terminal in the folder, run `node server.mjs` |
 
@@ -41,7 +41,7 @@ The file stays on your computer, is never sent to the browser, and is ignored by
 2. In the Tailscale admin page (https://login.tailscale.com/admin/dns) turn on **MagicDNS** and **HTTPS Certificates**.
 
 **Each time:**
-- **Windows:** double-click `start-phone.bat`
+- **Windows:** double-click `launchers\start-phone.bat`
 - **macOS / Linux:** in the project folder run
   ```
   tailscale serve --bg 8787
@@ -60,14 +60,14 @@ The computer must stay awake and the server running while you use the phone.
 ## Image analysis (optional)
 Lets the app read the look and tags of pictures to improve "For you". It runs fully on your computer; the AI model (~470 MB) is downloaded once.
 
-- **Windows:** double-click `setup-vision.bat`
+- **Windows:** double-click `maintenance\setup-vision.bat`
 - **macOS / Linux:** start the server, then in a second terminal run
   ```
   npm install
-  node scripts/vision-setup.mjs
+  node maintenance/vision-setup.mjs
   ```
 
-Turn it off any time with `node scripts/vision-setup.mjs off`.
+Turn it off any time with `node maintenance/vision-setup.mjs off`.
 
 ## Download your favorites
 Open **For you**, then **♥ Liked** and pick a filter (Liked, Super, Disliked or All voted).

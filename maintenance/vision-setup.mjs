@@ -17,7 +17,7 @@ if (st.status !== 200) {
   if (st.status !== 200) { say('The server did not come back. Start it by hand and run this again.'); process.exit(1); }
 }
 if (arg === 'forget' || arg === 'clear') { const r = await call('/api/vision/forget-imported' + (arg === 'clear' ? '?all=1' : '')); if (r.status === 200) { say(arg === 'clear' ? `Cleared everything: ${r.json.removed} entries removed. Fresh start. (Votes and backups untouched.)` : `Removed ${r.json.removed} imported test entries.`); process.exit(0); } }
-if (!st.json.packages) { say('The packages are not installed: ' + (st.json.packagesError || 'run npm install') + '\nRun setup-vision.bat again (it runs npm install first).'); process.exit(1); }
+if (!st.json.packages) { say('The packages are not installed: ' + (st.json.packagesError || 'run npm install') + '\nRun maintenance\\setup-vision.bat again (it runs npm install first).'); process.exit(1); }
 
 
 if (!st.json.model) {
