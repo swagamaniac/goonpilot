@@ -20,7 +20,7 @@ const store = {
 let uiTimer = null;
 function pushUi() {
   clearTimeout(uiTimer);
-  uiTimer = setTimeout(() => { lib('ui', { history: S.history, saved: S.saved, supers: S.supers }).catch(() => {}); }, 400);
+  uiTimer = setTimeout(() => { lib('ui', { history: S.history, saved: S.saved, supers: S.supers, seen: S.seen }).catch(() => {}); }, 400);
 }
 async function pullUi() {
   try {
@@ -33,6 +33,9 @@ async function pullUi() {
       S[k] = first ? uniq([...srv, ...S[k]], mergeKey[k]) : srv;
       try { localStorage.setItem('goonpilot:' + k, JSON.stringify(S[k])); } catch {}
     }
+    const srvSeen = ui.seen && typeof ui.seen === 'object' ? ui.seen : {};
+    for (const [k, v] of Object.entries(srvSeen)) { const cur = S.seen[k] || (S.seen[k] = {}); for (const [site, id] of Object.entries(v)) cur[site] = Math.max(cur[site] || 0, id); }
+    store.set('seen', S.seen);
     if (first) { store.set('uiMerged', true); pushUi(); }
     if (!$('sheetRoot').hidden) renderSheet();
   } catch {}
@@ -71,6 +74,7 @@ const S = {
   posts: [], keys: new Set(), loading: false, gen: 0, ctrl: null,
   saved: store.get('saved', []),
   supers: store.get('supers', []),
+  seen: store.get('seen', {}), newKey: null, newSince: null,
   status: null,
   vIndex: 0, vOpen: false, auto: false,
   mode: 'search',
@@ -187,6 +191,23 @@ function markFavs() {
     const fav = !!S.artists[artistKey(n.dataset.artist)];
     n.classList.toggle('fav', fav); n.textContent = (fav ? '♥ ' : '') + n.dataset.artist;
   });
+}
+function checkNew() {
+  const names = Object.values(S.artists).sort((a, b) => (b.added || 0) - (a.added || 0)).map(a => a.name);
+  if (!names.length) { toast('Add some favorites first'); return; }
+  if (names.length > 30) toast('Checking your 30 newest favorites');
+  S.terms = names.slice(0, 30).map(n => ({ kind: 'tag', name: n, mod: names.length > 1 ? '~' : '+', type: (S.artists[n].kind || 'artist') === 'tag' ? 'general' : S.artists[n].kind }));
+  S.newKey = 'fav'; S.newSort = 'id';
+  closeSheet(); syncFilterUi(); newSearch();
+}
+function trackNew(posts) {
+  const N = S.newSince; if (!N) return;
+  const cur = S.seen[N.key] || (S.seen[N.key] = {});
+  for (const p of posts) {
+    if (N.prev[p.site] && p.id > N.prev[p.site]) { p.isNew = true; N.n++; }
+    cur[p.site] = Math.max(cur[p.site] || 0, p.id);
+  }
+  store.set('seen', S.seen); pushUi();
 }
 function searchArtists(names, kind = 'artist') {
   S.terms = names.map(n => ({ kind: 'tag', name: n, mod: names.length > 1 ? '~' : '+', type: kind === 'tag' ? 'general' : kind }));
@@ -642,6 +663,9 @@ function newSearch(remember = true) {
   S.ctrl?.abort(); S.ctrl = new AbortController();
   S.gen++; S.fyNoShape = false;
   S.active = { sites: [...S.sites], base: buildBase() };
+  if (S.newSort) S.active.base.sort = S.newSort;
+  S.newSince = S.newKey ? { key: S.newKey, prev: { ...(S.seen[S.newKey] || {}) }, n: 0 } : null;
+  S.newKey = null; S.newSort = null;
   if (remember) recordHistory();
   S.feeds = Object.fromEntries(S.active.sites.map(s => [s, { page: 0, hasMore: true, error: '', hidden: 0 }]));
   S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.loading = false; S.dirty = false;
@@ -711,6 +735,7 @@ async function loadMore() {
   const merged = [], longest = Math.max(0, ...batches.map(b => b.length));
   for (let i = 0; i < longest; i++) for (const b of batches) if (b[i]) merged.push(b[i]);
   const fresh = dedupe(merged);
+  trackNew(fresh);
   const from = S.posts.length;
   S.posts.push(...fresh);
   await showNew(from, gen);
@@ -759,6 +784,7 @@ const render = {
     if (S.mode === 'liked') s.append(el('span', 'pill', `♥ Your votes: ${S.posts.length} of ${S.liked.total}`));
     else if (S.mode === 'foryou') s.append(el('span', 'pill', '✦ For you (beta): separate from search'));
     else if (S.dirty) s.append(el('span', 'pill busy', 'Not searched yet: press Search or Enter'));
+    else if (S.newSince) s.append(el('span', 'pill', Object.keys(S.newSince.prev).length ? `${S.newSince.n} new since last time` : 'First check: next time, new posts get a NEW badge'));
     const sites = S.active ? S.active.sites : [];
     for (const site of sites) {
       const f = S.feeds[site], g = gates[site];
@@ -834,6 +860,7 @@ const render = {
       setImg(img, p.type === 'image' && !(TOUCH.matches && p.preview) ? p.sample : p.preview);
       media.append(img);
       if (p.type !== 'image') media.append(el('span', 'badge', p.type));
+      if (p.isNew) media.append(el('span', 'badge new', 'new'));
       media.onclick = () => { if (S.sel) toggleSel(p, card); else viewer.open(i); };
       if (S.sel?.has(p.site + ':' + p.id)) card.classList.add('selected');
       const meta = el('div', 'meta');
@@ -1043,7 +1070,7 @@ function openSheet(t) {
 }
 const closeSheet = () => { $('sheetRoot').hidden = true; stEdit = null; S.capture = null; };
 $('libBtn').onclick = () => openSheet(tab === 'settings' ? 'saved' : tab);
-$('setBtn').onclick = () => { openSheet('settings'); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }); };
+$('setBtn').onclick = () => { openSheet('settings'); lib('library').then(r => { S.lib = r; if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {}); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }); };
 $('sheetBg').onclick = closeSheet;
 document.querySelector('.tabs').onclick = e => { const b = e.target.closest('button'); if (b) { stEdit = null; openSheet(b.dataset.tab); } };
 const termLabel = t => MOD_LABEL[t.mod] + (t.kind === 'super' ? '★' : '') + t.name;
@@ -1201,6 +1228,7 @@ function renderSheet() {
         closeSheet();
         S.sites = sites.filter(x => ALL_SITES.includes(x));
         S.terms = structuredClone(s.terms).map(normTerm); S.sort = s.sort; S.rating = s.rating; S.minScore = s.minScore;
+        S.newKey = 'saved:' + JSON.stringify([s.name, s.terms]);
         syncFilterUi(); newSearch();
       };
       const del = el('button', 'iconbtn', 'Delete');
@@ -1236,6 +1264,10 @@ function renderSheet() {
       segField('Auto-advance delay (images)', [3, 5, 8, 12], S.autoDelay, v => v + ' s', v => { S.autoDelay = v; store.set('autoDelay', v); }),
       segField('Video quality (e621 / e6ai)', ['medium', 'auto', 'original', 'compatible'], S.videoQuality, v => ({ medium: 'Medium (720p)', auto: 'Auto', original: 'Original only', compatible: 'Compatible' })[v], v => { S.videoQuality = v; store.set('videoQuality', v); }),
       el('p', 'hint', 'Auto: the original (webm/VP9, full quality) when your browser can play it, otherwise the mp4 copy (max 1080p, 3 Mbit/s). Original only: always the original, never the copy, even if it fails to play. Compatible: always the mp4 copy.')
+    );
+    body.append(
+      segField('Keep liked pictures on this computer', [false, true], !!S.lib?.enabled, v => v ? 'On' : 'Off', async v => { try { S.lib = await lib('library', { enabled: v }); } catch (err) { toast(err.message); } renderSheet(); }),
+      el('p', 'hint', `When on, a post you like is saved to data/library/ using the copy already loaded on screen (nothing is downloaded twice), and is shown from disk after that. Off: nothing new is saved; saved files stay and are still used.${S.lib ? ` Saved so far: ${S.lib.count}.` : ''}`)
     );
     body.append(renderForYouSettings());
     for (const src of S.status?.sources || []) {
@@ -1274,6 +1306,10 @@ function renderArtists(body) {
     if (S.artists[k]) toast('Already in your list'); else toggleArtist(k, kind.value);
   };
   row.append(kind, add); body.append(row);
+  if (names.length) {
+    const nb = el('button', 'btn', '🔔 What’s new from my favorites'); nb.onclick = checkNew; body.append(nb);
+    body.append(el('p', 'hint', 'Shows the latest posts from your favorites in one search. Anything posted since you last checked gets a NEW badge. Saved searches do the same when you open them. Remembered only on this computer.'));
+  }
   if (!names.length) body.append(el('p', 'hint', 'No favorites yet. Tap an artist name on a post, or ♡ next to any tag in the tag list, or add one above.'));
   for (const [k, title] of [['artist', 'Artists'], ['character', 'Characters'], ['tag', 'Tags']]) {
     const group = names.filter(n => (S.artists[n].kind || 'artist') === k); if (!group.length) continue;

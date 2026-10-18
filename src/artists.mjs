@@ -21,6 +21,15 @@ export function createArtists({ load, save, now = Date.now }) {
     setUi(b) {
       const cap = { history: 20, saved: 500, supers: 200 }, ui = get().ui;
       for (const k of Object.keys(cap)) if (Array.isArray(b[k])) ui[k] = b[k].filter(x => x && typeof x === 'object').slice(0, cap[k]);
+      if (b.seen && typeof b.seen === 'object' && !Array.isArray(b.seen)) {
+        const seen = {};
+        for (const [k, v] of Object.entries(b.seen).slice(0, 600)) {
+          if (k.length > 2000 || !v || typeof v !== 'object') continue;
+          const ids = Object.fromEntries(Object.entries(v).filter(([s, n]) => /^[a-z0-9_-]{1,20}$/.test(s) && Number.isInteger(n) && n >= 0).slice(0, 10));
+          if (Object.keys(ids).length) seen[k] = ids;
+        }
+        ui.seen = seen;
+      }
       save(get()); return ui;
     },
     remove(name) { delete get().artists[artistKey(name)]; save(get()); }

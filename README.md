@@ -77,6 +77,11 @@ Open **For you**, then **♥ Liked** and pick a filter (Liked, Super, Disliked o
 
 A copy of your liked list is also kept up to date in `data/liked-list.csv`.
 
+**Keep liked pictures (optional, off by default):** Settings, *Keep liked pictures on this computer*. A post you like is then saved to `data/library/` from the copy already on screen (nothing is downloaded twice) and shown from disk after that.
+
+## What's new from your favorites
+Open **Favorites** and tap **🔔 What's new from my favorites**. It runs one search over your favorites; posts added since your last check get a **NEW** badge. Saved searches do the same when you open them.
+
 ## Where your data lives
 - Likes, dislikes and taste: `data/` in the project folder
 - Saved searches, supertags and settings: your browser (localStorage)

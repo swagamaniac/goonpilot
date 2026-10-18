@@ -4,7 +4,7 @@ import { readFileSync, existsSync, appendFileSync, mkdirSync, writeFileSync, sta
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
-import { handleApi, buildLikedCsv, setApiLog } from './src/api.mjs';
+import { handleApi, buildLikedCsv, setApiLog, upstreamUrl } from './src/api.mjs';
 import { fileStore } from './src/foryou-store.mjs';
 import { createProfiles } from './src/profiles.mjs';
 import { createVision } from './src/vision.mjs';
@@ -12,6 +12,7 @@ import { tagMissing, siteTags } from './src/foryou.mjs';
 import { ensurePahealTags } from './src/sources/paheal-tags.mjs';
 import { createArtists } from './src/artists.mjs';
 import { createPostCache } from './src/postcache.mjs';
+import { createLibrary } from './src/library.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -55,6 +56,7 @@ const postStore = fileStore(path.join(ROOT, 'data'), 'posts');
 const posts = createPostCache({ load: postStore.load, save: postStore.save });
 const artistStore = fileStore(path.join(ROOT, 'data'), 'artists');
 const artists = createArtists({ load: artistStore.load, save: artistStore.save });
+const library = createLibrary({ dir: path.join(ROOT, 'data'), upstream: upstreamUrl });
 const missStore = fileStore(path.join(ROOT, 'data'), 'tagmiss');
 tagMissing.load(missStore.load());
 const saveMissing = () => { try { missStore.save(tagMissing.dump()); missStore.flush(); } catch {} };
@@ -172,7 +174,7 @@ const server = http.createServer(async (req, res) => {
       for (const h of ['origin', 'x-goonpilot', 'sec-fetch-site']) if (req.headers[h]) fwd[h] = req.headers[h];
       const request = new Request(url, { method: req.method, headers: fwd, body, signal: ac.signal });
       const t0 = Date.now(), tag = url.pathname.replace(/^\/api\//, '').slice(0, 60) + (/media$/.test(url.pathname) ? ' ' + (() => { try { return new URL(url.searchParams.get('u')).host; } catch { return ''; } })() : '');
-      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
+      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, library, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
       res.writeHead(response.status, { ...SECURITY_HEADERS, ...Object.fromEntries(response.headers) });
       const ttfb = Date.now() - t0; let bytes = 0;
       res.on('close', () => logLine(`api     ${response.status} ttfb=${ttfb}ms total=${Date.now() - t0}ms ${(bytes / 1024) | 0}KB ${req.method} ${tag}${res.writableFinished ? '' : ' ABORTED'}`));

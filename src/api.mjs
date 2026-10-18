@@ -49,10 +49,14 @@ async function readBody(request) {
   return [b, null];
 }
 
-async function handleLib(request, url, artists) {
+async function handleLib(request, url, artists, library = null) {
   if (!artists) return json({ error: 'Not available' }, 404);
   const bad = guardPrivate(request, url); if (bad) return bad;
   try {
+    if (url.pathname === '/api/lib/library' && library) {
+      if (request.method === 'POST') { const [b, err] = await readBody(request); if (err) return err; library.setEnabled(b.enabled === true); }
+      return json(library.status());
+    }
     if (url.pathname === '/api/lib/ui') {
       if (request.method === 'GET') return json({ ui: artists.getUi() });
       if (request.method === 'POST') { const [b, err] = await readBody(request); if (err) return err; return json({ ui: artists.setUi(b) }); }
@@ -69,7 +73,7 @@ async function handleLib(request, url, artists) {
   } catch (e) { return json({ error: e.message || 'Failed' }, e.status === 400 ? 400 : 502); }
 }
 
-async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, vision = null) {
+async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, vision = null, library = null) {
   if (!fy) return json({ error: 'For you is not available' }, 404);
   const bad = guardPrivate(request, url); if (bad) return bad;
   const route = url.pathname.slice('/api/foryou/'.length);
@@ -92,7 +96,11 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
     }
     if (request.method === 'POST') {
       const [b, err] = await readBody(request); if (err) return err;
-      if (route === 'vote') return json({ vote: fy.vote({ site: String(b.site), id: b.id, vote: b.vote, post: b.post, strat: b.strat, md5: b.md5, dive: b.dive === true }) });
+      if (route === 'vote') {
+        const vote = fy.vote({ site: String(b.site), id: b.id, vote: b.vote, post: b.post, strat: b.strat, md5: b.md5, dive: b.dive === true });
+        if (library && vote > 0) library.liked(`${b.site}:${b.id}`, posts?.get(`${b.site}:${b.id}`));
+        return json({ vote });
+      }
       if (route === 'reset-learning') {
         if (b.confirm !== 'RESET' || !profiles) return json({ error: 'Not confirmed' }, 400);
         profiles.resetAllLearning(); return json({ ok: true });
@@ -101,7 +109,9 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
       if (route === 'seen') return json({ ok: fy.markViewed({ site: String(b.site), id: b.id, post: b.post, md5: b.md5 }) });
       if (route === 'snap') {
         if (!posts || !/^[a-z0-9_-]{1,20}$/.test(String(b.site)) || !Number.isInteger(b.id)) return json({ error: 'Bad post' }, 400);
-        return json({ ok: posts.set(String(b.site), b.id, b.gone === true ? null : b.post) });
+        const ok = posts.set(String(b.site), b.id, b.gone === true ? null : b.post);
+        if (library) library.snapped(`${b.site}:${b.id}`, posts.get(`${b.site}:${b.id}`));
+        return json({ ok });
       }
       if (route === 'profile' && profiles) {
         const act = String(b.action);
@@ -148,7 +158,7 @@ const crcStep = (crc, buf) => { let c = crc; for (let i = 0; i < buf.length; i++
 const u16 = (n) => { const b = Buffer.alloc(2); b.writeUInt16LE(n); return b; };
 const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0); return b; };
 
-function upstreamUrl(snapUrl) {
+export function upstreamUrl(snapUrl) {
   const m = /^\/api\/[a-z0-9_-]+\/media\?u=(.+)$/.exec(snapUrl || '');
   if (m) { try { return decodeURIComponent(m[1]); } catch { return ''; } }
   return /^https:\/\//.test(snapUrl || '') ? snapUrl : '';
@@ -175,7 +185,7 @@ async function* zipStream(entries) {
   yield Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(central.length), u16(central.length), u32(cdSize), u32(cdStart), u16(0)]);
 }
 
-async function handleDownload(request, url, env, fetchImpl, fy, posts) {
+async function handleDownload(request, url, env, fetchImpl, fy, posts, library = null) {
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
   if (request.headers.get('sec-fetch-site') !== 'same-origin') return json({ error: 'Forbidden' }, 403);
   let refs = [];
@@ -192,7 +202,7 @@ async function handleDownload(request, url, env, fetchImpl, fy, posts) {
     files.push({ ...r, up, name: safeName(r.site, r.id, snap, up) });
   }
   if (!files.length) return json({ error: 'Nothing to download (posts not saved locally yet: open them in the Liked view first)' }, 404);
-  const fetchFile = (f) => SOURCES[f.site].media(f.up, new Request('http://local/'), env, fetchImpl);
+  const fetchFile = (f) => library?.serve(f.up) || SOURCES[f.site].media(f.up, new Request('http://local/'), env, fetchImpl);
   if (files.length === 1) {
     const res = await fetchFile(files[0]);
     const h = new Headers(res.headers); h.set('Content-Disposition', `attachment; filename="${files[0].name}"`); h.set('Cache-Control', 'no-store');
@@ -228,13 +238,13 @@ function handleExport(request, url, fy, posts) {
 export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   const url = new URL(request.url);
   if (url.pathname === '/api/lib/export' && request.method === 'GET') return handleExport(request, url, ctx.foryou, ctx.posts);
-  if (url.pathname === '/api/lib/download') return handleDownload(request, url, env, fetchImpl, ctx.foryou, ctx.posts);
+  if (url.pathname === '/api/lib/download') return handleDownload(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.library);
   if (url.pathname === '/api/lib/restart' && request.method === 'POST') {
     const bad = guardPrivate(request, url); if (bad) return bad;
     if (!ctx.restart) return json({ error: 'Restart only works when started with start-phone.bat' }, 409);
     ctx.restart(); return json({ ok: true });
   }
-  if (url.pathname.startsWith('/api/lib/')) return handleLib(request, url, ctx.artists);
+  if (url.pathname.startsWith('/api/lib/')) return handleLib(request, url, ctx.artists, ctx.library);
   const visionGuard = () => (request.headers.get('x-goonpilot') === '1' || request.headers.get('sec-fetch-site') === 'none') && (!request.headers.get('origin') || request.headers.get('origin') === url.origin) ? null : json({ error: 'Forbidden' }, 403);
   if (url.pathname === '/api/vision/status') return json(ctx.vision ? { ...(await ctx.vision.status()), votes: ctx.visionVotes ? ctx.visionVotes() : undefined } : { enabled: false, packages: false, model: false, ready: false });
   if (url.pathname === '/api/vision/tags') {
@@ -263,7 +273,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     if (!ctx.vision) return json({ error: 'not available' }, 409);
     ctx.vision.setEnabled(url.searchParams.get('on') !== '0'); return json(await ctx.vision.status());
   }
-  if (url.pathname.startsWith('/api/foryou/')) return handleForYou(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.profiles, ctx.vision);
+  if (url.pathname.startsWith('/api/foryou/')) return handleForYou(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.profiles, ctx.vision, ctx.library);
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {
@@ -282,7 +292,9 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   try {
     if (m[2] === 'media') {
       if (!source.media) return json({ error: 'Not found' }, 404);
-      const mres = await source.media(p.get('u') || '', request, env, fetchImpl);
+      const local = ctx.library?.serve(p.get('u') || '', request); if (local) return local;
+      let mres = await source.media(p.get('u') || '', request, env, fetchImpl);
+      if (ctx.library) mres = ctx.library.tap(mres, p.get('u') || '');
       return ctx.vision ? ctx.vision.tap(mres, p.get('u') || '') : mres;
     }
     if (m[2] === 'tagcheck') return json({ exists: await checkTags(source, list(p.get('names')), env, fetchImpl) });
