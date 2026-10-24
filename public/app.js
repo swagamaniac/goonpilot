@@ -42,7 +42,8 @@ async function pullUi() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { pullUi(); loadArtists(); } });
 
-const ALL_SITES = ['rule34', 'e621', 'e6ai', 'paheal'];
+const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal'];
+const ALL_SITES = [...BUILTIN_SITES, ...store.get('customSites', []).filter(x => typeof x === 'string' && !BUILTIN_SITES.includes(x))];
 
 const MODS = ['+', '-', '~'];
 const MOD_LABEL = { '+': '', '-': '−', '~': '~' };
@@ -121,6 +122,14 @@ function makeGate() {
   };
 }
 const gates = Object.fromEntries(ALL_SITES.map(s => [s, makeGate()]));
+function syncSites(status) {
+  const custom = (status?.sources || []).filter(x => x.custom).map(x => x.id);
+  ALL_SITES.splice(0, ALL_SITES.length, ...BUILTIN_SITES, ...custom);
+  for (const id of custom) gates[id] ||= makeGate();
+  store.set('customSites', custom);
+  const kept = S.sites.filter(x => ALL_SITES.includes(x));
+  if (kept.length !== S.sites.length) { S.sites = kept.length ? kept : ['rule34']; markDirty(); }
+}
 
 async function getJson(url, signal) {
   let res;
@@ -1286,6 +1295,7 @@ function renderSheet() {
       };
       const row = el('div', 'field'); row.append(...inputs, save); body.append(row);
     }
+    body.append(renderCustomSites());
     body.append(el('p', 'hint', 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login.'));
     body.append(el('p', 'hint', 'e621 and e6ai images are loaded through your local server with your login.'));
     const rs = el('button', 'btn', '↻ Restart server (start-phone.bat)');
@@ -1379,6 +1389,27 @@ function renderProfiles() {
     };
     d.append(b);
   }
+  return d;
+}
+function renderCustomSites() {
+  const d = el('div', 'fybox'); d.append(el('h3', null, '＋ Custom sites'));
+  d.append(el('p', 'hint', 'Add another booru by its address and API type. Only the sites you add are contacted. The list is saved in data/boorus.json and its login fields appear above after adding. Untested.'));
+  const refresh = async () => { try { S.status = await api.status(); syncSites(S.status); render.sites(); } catch {} renderSheet(); };
+  const call = async (body) => { try { await fyJson('boorus', body, undefined, '/api/'); await refresh(); } catch (err) { toast(err.message); } };
+  for (const src of (S.status?.sources || []).filter(x => x.custom)) {
+    const row = el('div', 'field'); row.append(el('span', 'grow', `${src.label} · ${src.base} · ${S.status.types?.[src.type] || src.type}`));
+    const rm = el('button', 'btn ghost', 'Remove');
+    rm.onclick = () => { if (!rm.dataset.sure) { rm.dataset.sure = '1'; rm.textContent = 'Tap again to remove'; return; } call({ action: 'remove', id: src.id }); };
+    row.append(rm); d.append(row);
+  }
+  const name = el('input', 'fyinput'); name.placeholder = 'Name'; name.maxLength = 30; name.setAttribute('aria-label', 'Site name');
+  const base = el('input', 'fyinput'); base.placeholder = 'https://example.org'; base.type = 'url'; base.setAttribute('aria-label', 'Site address');
+  const type = el('select', 'fyinput'); type.setAttribute('aria-label', 'API type');
+  for (const [k, v] of Object.entries(S.status?.types || {})) { const o = el('option', null, v); o.value = k; type.append(o); }
+  for (const i of [name, base]) i.onkeydown = ev => ev.stopPropagation();
+  const add = el('button', 'btn', 'Add');
+  add.onclick = () => { if (name.value.trim() && base.value.trim()) call({ action: 'add', label: name.value, base: base.value, type: type.value }); };
+  const row = el('div', 'field'); row.append(name, base, type, add); d.append(row);
   return d;
 }
 function renderHotkeys() {
@@ -1813,7 +1844,7 @@ document.addEventListener('keydown', e => {
 });
 
 soundIcon(); syncFilterUi(); render.chips(); render.searchBtn(); render.status(); render.endState(); observeSentinel();
-api.status().then(s => { S.status = s; render.sites(); render.status(); }).catch(() => {});
+api.status().then(s => { S.status = s; syncSites(s); render.sites(); render.status(); }).catch(() => {});
 setDebug(S.fyDebug); renderHints(); loadFyState(); loadArtists(); pullUi();
 newSearch(false);
 

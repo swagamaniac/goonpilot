@@ -4,7 +4,7 @@ import { readFileSync, existsSync, appendFileSync, mkdirSync, writeFileSync, sta
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
-import { handleApi, buildLikedCsv, setApiLog, upstreamUrl } from './src/api.mjs';
+import { handleApi, buildLikedCsv, setApiLog, upstreamUrl, setCustomSources } from './src/api.mjs';
 import { fileStore } from './src/foryou-store.mjs';
 import { createProfiles } from './src/profiles.mjs';
 import { createVision } from './src/vision.mjs';
@@ -28,7 +28,7 @@ function loadVars() {
       if (m && !line.trim().startsWith('#')) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
   }
-  for (const k of Object.keys(process.env)) if (/^(RULE34|E621|E6AI|GELBOORU|DANBOORU)_/.test(k)) env[k] = process.env[k];
+  for (const k of Object.keys(process.env)) if (/^(RULE34|E621|E6AI|GELBOORU|DANBOORU|CUSTOM)_/.test(k)) env[k] = process.env[k];
   return env;
 }
 const env = loadVars();
@@ -41,6 +41,13 @@ function saveVars(vals) {
     env[k] = v;
   }
   writeFileSync(file, lines.join('\n') + '\n');
+}
+const BOORUS = path.join(ROOT, 'data', 'boorus.json');
+try { if (existsSync(BOORUS)) setCustomSources(JSON.parse(readFileSync(BOORUS, 'utf8'))); } catch (e) { console.log('  data/boorus.json could not be read: ' + e.message); }
+function saveBoorus(list) {
+  mkdirSync(path.dirname(BOORUS), { recursive: true });
+  writeFileSync(BOORUS + '.tmp', JSON.stringify(list, null, 2)); renameSync(BOORUS + '.tmp', BOORUS);
+  setCustomSources(list);
 }
 const vision = createVision({ dir: path.join(ROOT, 'data'), fetchImpl: (u, o) => timedFetch(u, o), log: (type, msg) => logLine(`${String(type).padEnd(7)} ${msg}`) });
 const visionImport = () => {
@@ -184,7 +191,7 @@ const server = http.createServer(async (req, res) => {
       for (const h of ['origin', 'x-goonpilot', 'sec-fetch-site']) if (req.headers[h]) fwd[h] = req.headers[h];
       const request = new Request(url, { method: req.method, headers: fwd, body, signal: ac.signal });
       const t0 = Date.now(), tag = url.pathname.replace(/^\/api\//, '').slice(0, 60) + (/media$/.test(url.pathname) ? ' ' + (() => { try { return new URL(url.searchParams.get('u')).host; } catch { return ''; } })() : '');
-      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
+      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, saveBoorus: local ? saveBoorus : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
       res.writeHead(response.status, { ...SECURITY_HEADERS, ...Object.fromEntries(response.headers) });
       const ttfb = Date.now() - t0; let bytes = 0;
       res.on('close', () => logLine(`api     ${response.status} ttfb=${ttfb}ms total=${Date.now() - t0}ms ${(bytes / 1024) | 0}KB ${req.method} ${tag}${res.writableFinished ? '' : ' ABORTED'}`));

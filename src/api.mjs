@@ -1,8 +1,26 @@
 import { rule34, proxifyPost } from './sources/rule34.mjs';
 import { e621, e6ai } from './sources/e621.mjs';
 import { paheal } from './sources/paheal.mjs';
+import { makeCustom, CUSTOM_TYPES } from './sources/custom.mjs';
 
-const SOURCES = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal };
+const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal };
+let SOURCES = { ...BUILTIN };
+const RESERVED = new Set([...Object.keys(BUILTIN), 'lib', 'foryou', 'vision', 'keys', 'status', 'boorus']);
+
+// Validates a user-added site; returns the cleaned entry or throws.
+export function checkCustom(b) {
+  const label = String(b.label || '').trim().slice(0, 30);
+  const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20);
+  if (!id || RESERVED.has(id)) throw Object.assign(new Error('Pick another name'), { status: 400 });
+  if (!CUSTOM_TYPES[b.type]) throw Object.assign(new Error('Unknown API type'), { status: 400 });
+  let u; try { u = new URL(String(b.base || '').trim()); } catch { throw Object.assign(new Error('Bad URL'), { status: 400 }); }
+  if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) throw Object.assign(new Error('Bad URL'), { status: 400 });
+  return { id, label, base: u.origin + u.pathname.replace(/\/+$/, ''), type: b.type };
+}
+export function setCustomSources(list) {
+  SOURCES = { ...BUILTIN };
+  for (const c of list || []) { try { const e = checkCustom(c); SOURCES[e.id] = makeCustom(e); } catch {} }
+}
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
@@ -274,6 +292,18 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     ctx.vision.setEnabled(url.searchParams.get('on') !== '0'); return json(await ctx.vision.status());
   }
   if (url.pathname.startsWith('/api/foryou/')) return handleForYou(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.profiles, ctx.vision, ctx.library);
+  if (url.pathname === '/api/boorus' && request.method === 'POST') {
+    const bad = guardPrivate(request, url); if (bad) return bad;
+    if (!ctx.saveBoorus) return json({ error: 'Sites can only be changed on the computer running the server' }, 403);
+    const [b, err] = await readBody(request); if (err) return err;
+    const list = Object.values(SOURCES).filter(s => s.custom).map(({ id, label, base, type }) => ({ id, label, base, type }));
+    try {
+      if (b.action === 'remove') { ctx.saveBoorus(list.filter(c => c.id !== String(b.id))); return json({ ok: true }); }
+      const e = checkCustom(b);
+      if (SOURCES[e.id]) return json({ error: 'A site with that name already exists' }, 409);
+      ctx.saveBoorus([...list, e]); return json({ ok: true, id: e.id });
+    } catch (e) { return json({ error: e.message }, e.status || 400); }
+  }
   if (url.pathname === '/api/keys' && request.method === 'POST') {
     const bad = guardPrivate(request, url); if (bad) return bad;
     if (!ctx.saveVars) return json({ error: 'Logins can only be changed on the computer running the server' }, 403);
@@ -288,7 +318,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {
-    return json({ sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })) })) });
+    return json({ types: CUSTOM_TYPES, sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
   }
 
   const m = /^\/api\/([a-z0-9_-]+)\/(posts|suggest|media|tagcheck)$/.exec(url.pathname);
