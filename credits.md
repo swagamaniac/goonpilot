@@ -24,7 +24,10 @@ https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3 (Apache-2.0), by SmilingW
 The optional image analysis uses this model to describe pictures with tags. It is not included in this repository. It is downloaded to your own computer when you run the image analysis setup, and it never leaves it.
 
 ## Libraries
-The image analysis also uses [onnxruntime-node](https://github.com/microsoft/onnxruntime) to run the model and [sharp](https://github.com/lovell/sharp) to read images. Both are optional and installed with `npm install`.
+The image analysis also uses [onnxruntime-node](https://github.com/microsoft/onnxruntime) to run the model and [sharp](https://github.com/lovell/sharp) to read images. Both are optional and installed with `npm install`. Their own dependencies are all under permissive licenses (MIT, Apache-2.0, BSD, ISC), except the prebuilt libvips binaries that sharp downloads, which are LGPL-3.0-or-later. None of them are included in this repository.
+
+## Fonts and images
+Goonpilot ships no font files. The interface uses your system's own fonts and emoji. The only bundled image is the WTFPL badge (`public/img/wtfpl-badge-88x31.png`) from [wtfpl.net](http://www.wtfpl.net/), released under the WTFPL.
 
 ## The sites
 Thanks to rule34.xxx, e621, e6ai and rule34.paheal.net for their public APIs.
