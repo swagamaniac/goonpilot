@@ -1335,6 +1335,39 @@ function renderBackup() {
     try { const b = JSON.parse(await f.text()); await fyJson('backup', b, undefined, 'api/pages/'); location.reload(); } catch (err) { toast(err.message || 'Not a backup file'); }
   };
   const row = el('div', 'field'); row.append(save, load, pick); box.append(row);
+  box.append(renderDrive());
+  return box;
+}
+
+let driveMod = null;
+function renderDrive() {
+  const box = el('div');
+  const signedIn = driveMod?.signedIn();
+  box.append(el('p', 'hint', signedIn
+    ? 'Syncing to your Google Drive every few minutes and when you leave the page (one file in a hidden app folder; logins are not included). Sign in again after a reload or after an hour.'
+    : 'Optional: keep a copy in your own Google Drive. Off until you sign in; nothing is sent to Google before that.'));
+  const row = el('div', 'field');
+  const fail = (err) => toast(err.message || 'Google Drive sync failed');
+  if (!signedIn) {
+    const b = el('button', 'btn', 'Sign in with Google to sync');
+    b.onclick = async () => {
+      try {
+        driveMod ||= await import('./drive.js');
+        const remote = await driveMod.signIn();
+        if (remote && confirm(`Google Drive has a copy from ${new Date(remote.remoteAt).toLocaleString()}.\n\nOK: use the Drive copy (replaces what this browser has).\nCancel: keep this browser's data and overwrite the Drive copy.`)) { await driveMod.pull(); location.reload(); return; }
+        await driveMod.push(); driveMod.start(fail); toast('Synced to Google Drive');
+      } catch (err) { fail(err); }
+      renderSheet();
+    };
+    row.append(b);
+  } else {
+    const now = el('button', 'btn', 'Sync now');
+    now.onclick = async () => { try { toast(await driveMod.push() ? 'Synced to Google Drive' : 'Signed out: sign in again'); } catch (err) { fail(err); } renderSheet(); };
+    const out = el('button', 'btn', 'Sign out');
+    out.onclick = () => { driveMod.signOut(); renderSheet(); };
+    row.append(now, out);
+  }
+  box.append(row);
   return box;
 }
 
