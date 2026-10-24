@@ -878,6 +878,7 @@ const render = {
       up.type = dn.type = 'button'; up.title = 'Like (8)'; dn.title = 'Dislike (2)';
       up.onclick = () => castVote(p, 1); dn.onclick = () => castVote(p, -1);
       const dv = el('button', 'vbtn fy-only', '🧭'); dv.type = 'button'; dv.title = 'Deep Dive: more like this post'; dv.onclick = () => startDive(p);
+      for (const b of [dv, sdn, dn, up, sup]) b.setAttribute('aria-label', b.title);
       meta.append(dv, sdn, dn, up, sup);
       card.append(media, meta);
       if (p.why) card.append(whyLine(p.why), dbgLine(p.dbg));

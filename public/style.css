@@ -289,7 +289,7 @@ body.swipe-votes .viewer, body.swipe-votes .vscroll { touch-action: pan-y; }
 @keyframes hb { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.4); } 25% { opacity: 1; transform: translate(-50%, -60%) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, -140%) scale(1); } }
 
 .gesthelp { position: fixed; z-index: 80; left: 50%; top: 22%; transform: translateX(-50%); width: min(300px, 86vw); background: rgba(20,20,20,.94); color: #eee; border: 1px solid #444; border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px; font-size: 15px; }
-.gesthelp > div { display: flex; justify-content: space-between; gap: 12px; } .gesthelp .off { opacity: .45; } .gesthelp small { color: #aaa; }
+.gesthelp > div { display: flex; justify-content: space-between; gap: 12px; } .gesthelp .off { opacity: .6; } .gesthelp small { color: #aaa; }
 @media (hover: hover) and (pointer: fine) { #vGest, .gesthelp { display: none !important; } }
 
 header.bar { transition: transform .22s ease; }
