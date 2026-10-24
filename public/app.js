@@ -79,7 +79,7 @@ const S = {
   vIndex: 0, vOpen: false, auto: false,
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
-  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
+  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
@@ -603,21 +603,23 @@ $('results').addEventListener('mouseover', e => {
   const c = e.target.closest?.('.post'); hovered.p = c ? S.posts[+c.dataset.i] : null;
 });
 $('results').addEventListener('mouseleave', () => { hovered.p = null; });
-const HK_LABEL = { like: 'Like', dislike: 'Dislike', superLike: 'Super like', superDislike: 'Super dislike', hints: 'Show / hide the hotkey bar' };
-const HK_DEFAULT = { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h' };
+const HK_LABEL = { like: 'Like', dislike: 'Dislike', superLike: 'Super like', superDislike: 'Super dislike', hints: 'Show / hide the hotkey bar', next: 'Next post (fullscreen)', prev: 'Previous post (fullscreen)', details: 'Details panel (fullscreen)', close: 'Close fullscreen', search: 'Search' };
+const HK_DEFAULT = { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter' };
 const HK_VALUE = { like: 1, dislike: -1, superLike: 2, superDislike: -2 };
-const HK_FIXED = [['J / K  or  ↓ / ↑', 'Next / previous post (fullscreen)'], ['← / →', 'Details panel (fullscreen)'], ['Esc', 'Close fullscreen'], ['Enter', 'Search']];
+const HK_FIXED = [['↓ / ↑', 'Also next / previous post (fullscreen)'], ['←', 'Also details panel (fullscreen)']];
+const HK_NAME = { arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→', escape: 'Esc', enter: 'Enter', backspace: 'Backspace', delete: 'Del', home: 'Home', end: 'End', pageup: 'PgUp', pagedown: 'PgDn' };
+const keyName = k => HK_NAME[k] || k.toUpperCase();
 const hkAction = key => Object.keys(HK_LABEL).find(a => S.hk[a] === key);
 document.addEventListener('keydown', e => {
   if (!S.capture) return;
   e.preventDefault(); e.stopPropagation();
   const act = S.capture, key = e.key.toLowerCase();
-  if (e.key === 'Escape') { S.capture = null; renderSheet(); return; }
   if (['shift', 'control', 'alt', 'meta'].includes(key)) return;
-  if (e.key.length !== 1 || e.key === ' ') { toast('Use a single letter, digit or symbol key'); return; }
-  if (['j', 'k'].includes(key)) { toast('J and K move between posts and can’t be used'); return; }
+  if ((e.key.length !== 1 && !HK_NAME[key]) || e.key === ' ') { toast('Use a letter, digit, symbol, arrow, Enter or Esc'); return; }
+  const fixed = { arrowdown: 'next', arrowup: 'prev', arrowleft: 'details' }[key];
+  if (fixed && fixed !== act) { toast(`“${keyName(key)}” is reserved for: ${HK_LABEL[fixed]}`); return; }
   const other = hkAction(key);
-  if (other && other !== act) { toast(`“${key.toUpperCase()}” is already used for: ${HK_LABEL[other]}`); return; }
+  if (other && other !== act) { toast(`“${keyName(key)}” is already used for: ${HK_LABEL[other]}`); return; }
   S.hk[act] = key; store.set('hotkeys', S.hk); S.capture = null; renderSheet(); renderHints();
 }, true);
 document.addEventListener('keydown', e => {
@@ -625,7 +627,7 @@ document.addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select') || !$('sheetRoot').hidden) return;
   const act = hkAction(e.key.toLowerCase()); if (!act) return;
   if (act === 'hints') { if (S.fyOn) { e.preventDefault(); setHints(!S.hintsOn); } return; }
-  if (!S.fyOn) return;
+  if (!S.fyOn || !(act in HK_VALUE)) return;
   const p = S.vOpen ? S.posts[S.vIndex] : hovered.p;
   if (!p) return;
   e.preventDefault(); castVote(p, HK_VALUE[act]);
@@ -636,7 +638,7 @@ function renderHints() {
   const b = $('hintBar'), on = S.fyOn && S.hintsOn && !TOUCH.matches;
   document.body.classList.toggle('hints-on', on); b.hidden = !on; b.replaceChildren();
   if (!on) return;
-  const add = (key, text) => { const sp = el('span'); sp.append(el('kbd', null, key.toUpperCase()), document.createTextNode(' ' + text)); b.append(sp); };
+  const add = (key, text) => { const sp = el('span'); sp.append(el('kbd', null, keyName(key)), document.createTextNode(' ' + text)); b.append(sp); };
   add(S.hk.like, 'like'); add(S.hk.dislike, 'dislike'); add(S.hk.superLike, '⭐ super'); add(S.hk.superDislike, '⛔ super'); add(S.hk.hints, 'hide');
 }
 function setHints(on) { S.hintsOn = on; store.set('hintsOn', on); renderHints(); }
@@ -1020,7 +1022,7 @@ $('minScore').oninput = e => { S.minScore = Math.max(0, +e.target.value || 0); m
 $('minScore').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); newSearch(); } };
 
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || S.vOpen || !$('sheetRoot').hidden) return;
+  if (S.capture || hkAction(e.key.toLowerCase()) !== 'search' || S.vOpen || !$('sheetRoot').hidden) return;
   const t = e.target;
   if (t.closest && t.closest('input, textarea, select, button, a')) return;
   e.preventDefault(); newSearch();
@@ -1380,10 +1382,10 @@ function renderProfiles() {
 }
 function renderHotkeys() {
   const d = el('div', 'fybox hk-box'); d.append(el('h3', null, '⌨ Hotkeys'));
-  d.append(el('p', 'hint', 'Click a key, then press the new one. Esc cancels. Numpad keys count as the same digit.'));
+  d.append(el('p', 'hint', 'Click a key, then press the new one. Click it again to cancel. Numpad keys count as the same digit.'));
   for (const a of Object.keys(HK_LABEL)) {
     const row = el('div', 'hkrow'); row.append(el('span', null, HK_LABEL[a]));
-    const b = el('button', 'hkkey' + (S.capture === a ? ' capturing' : ''), S.capture === a ? 'press a key…' : S.hk[a].toUpperCase());
+    const b = el('button', 'hkkey' + (S.capture === a ? ' capturing' : ''), S.capture === a ? 'press a key…' : keyName(S.hk[a]));
     b.onclick = () => { S.capture = S.capture === a ? null : a; renderSheet(); };
     row.append(b); d.append(row);
   }
@@ -1801,11 +1803,12 @@ $('vInfo').onclick = () => {
 };
 window.addEventListener('popstate', () => { if (S.vOpen) viewer.close(true); });
 document.addEventListener('keydown', e => {
-  if (!S.vOpen) return;
-  if (e.key === 'Escape') viewer.close();
-  else if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); viewer.step(1); }
-  else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); viewer.step(-1); }
-  else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); $('vInfo').click(); }
+  if (!S.vOpen || S.capture || e.ctrlKey || e.metaKey || e.altKey) return;
+  const act = hkAction(e.key.toLowerCase());
+  if (act === 'close') viewer.close();
+  else if (act === 'next' || e.key === 'ArrowDown') { e.preventDefault(); viewer.step(1); }
+  else if (act === 'prev' || e.key === 'ArrowUp') { e.preventDefault(); viewer.step(-1); }
+  else if (act === 'details' || e.key === 'ArrowLeft') { e.preventDefault(); $('vInfo').click(); }
 });
 
 soundIcon(); syncFilterUi(); render.chips(); render.searchBtn(); render.status(); render.endState(); observeSentinel();
