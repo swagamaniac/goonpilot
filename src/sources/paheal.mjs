@@ -14,7 +14,7 @@ const NO_META = /^(score|rating|sort|order|aspectratiof?|ratio):/i;
 export const viaProxy = (u) => u ? `/api/paheal/media?u=${encodeURIComponent(u)}` : '';
 
 function attrs(s) {
-  const o = {}, re = /([a-z_]+)=(?:'([^']*)'|"([^"]*)")/g; let m;
+  const o = {}, re = /([a-z0-9_]+)=(?:'([^']*)'|"([^"]*)")/g; let m;
   while ((m = re.exec(s))) o[m[1]] = decodeEntities(m[2] ?? m[3] ?? '');
   return o;
 }
