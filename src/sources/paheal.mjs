@@ -118,4 +118,5 @@ export const paheal = {
   }
 };
 
+export { parsePosts, attrs };
 export const _test = { buildTags, normalizePost, parsePosts };

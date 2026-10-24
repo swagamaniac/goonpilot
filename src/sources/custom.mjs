@@ -1,7 +1,9 @@
 import { makeE621ng } from './e621.mjs';
+import { parsePosts, attrs } from './paheal.mjs';
 
-// User-added sites. Each one speaks one of a few common booru APIs.
-export const CUSTOM_TYPES = { gelbooru: 'Gelbooru-style (dapi)', danbooru: 'Danbooru-style', moebooru: 'Moebooru-style', e621: 'e621-style' };
+// User-added sites. Request formats follow the built-in adapters: gelbooru = rule34's dapi,
+// shimmie = paheal's danbooru-compat XML, e621 = the e621 adapter itself.
+export const CUSTOM_TYPES = { gelbooru: 'Gelbooru (like rule34)', shimmie: 'Shimmie (like paheal)', e621: 'e621 / e621ng', danbooru: 'Danbooru', moebooru: 'Moebooru' };
 
 const MAX_TAGS_LEN = 2000;
 const TYPE_BY_NUMBER = { 0: 'general', 1: 'artist', 3: 'copyright', 4: 'character', 5: 'meta' };
@@ -42,7 +44,7 @@ export function makeCustom({ id, label, base, type }) {
   const ENV_USER = `${prefix}_USERNAME`, ENV_KEY = `${prefix}_API_KEY`;
   const viaProxy = (u) => { if (!u) return ''; try { return `/api/${id}/media?u=${encodeURIComponent(new URL(u, site + '/').href)}`; } catch { return ''; } };
   const logged = (env) => !!(env[ENV_USER] && env[ENV_KEY]);
-  const authParams = (env) => !logged(env) ? {} : type === 'gelbooru' ? { user_id: env[ENV_USER], api_key: env[ENV_KEY] }
+  const authParams = (env) => !logged(env) || type === 'shimmie' ? {} : type === 'gelbooru' ? { user_id: env[ENV_USER], api_key: env[ENV_KEY] }
     : type === 'moebooru' ? { login: env[ENV_USER], password_hash: env[ENV_KEY] } : { login: env[ENV_USER], api_key: env[ENV_KEY] };
   const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)' };
 
@@ -54,6 +56,7 @@ export function makeCustom({ id, label, base, type }) {
     if (res.status === 401 || res.status === 403) throw Object.assign(new Error(`${label} refused the request (${res.status}). Check its login in Settings.`), { status: res.status });
     const t = (await res.text()).trim();
     if (!res.ok) throw Object.assign(new Error(`${label} answered ${res.status}`), { status: 502 });
+    if (type === 'shimmie') return t;
     if (!t) return [];
     try { return JSON.parse(t); } catch { throw Object.assign(new Error(`${label} did not answer with JSON. Is the API type right?`), { status: 502 }); }
   }
@@ -70,22 +73,22 @@ export function makeCustom({ id, label, base, type }) {
       id: Number(p.id),
       md5: /^[0-9a-f]{32}$/i.test(md5) ? md5.toLowerCase() : '',
       w: Number(p.width ?? p.image_width) || 1, h: Number(p.height ?? p.image_height) || 1,
-      type: kind(p.file_ext ? '.' + p.file_ext : file),
+      type: kind(p.file_ext ? '.' + p.file_ext : p.file_name || file),
       rating: rate(p.rating),
       score: Number(p.score) || 0,
-      date: date(p.created_at ?? p.change),
+      date: date(p.created_at ?? p.change ?? (p.date && String(p.date).replace(' ', 'T') + 'Z')),
       file: viaProxy(file), sample: viaProxy(sample || file), preview: viaProxy(p.preview_url || p.preview_file_url),
       tags,
-      link: type === 'gelbooru' ? `${site}/index.php?page=post&s=view&id=${Number(p.id)}` : type === 'moebooru' ? `${site}/post/show/${Number(p.id)}` : `${site}/posts/${Number(p.id)}`
+      link: type === 'gelbooru' ? `${site}/index.php?page=post&s=view&id=${Number(p.id)}` : type === 'moebooru' ? `${site}/post/show/${Number(p.id)}` : type === 'shimmie' ? `${site}/post/view/${Number(p.id)}` : `${site}/posts/${Number(p.id)}`
     };
   }
 
   return {
     id, label, ...extra,
-    envKeys: [ENV_USER, ENV_KEY],
+    envKeys: type === 'shimmie' ? [] : [ENV_USER, ENV_KEY],
     minGap: 1000,
     configured() { return true; },
-    auth(env) { return logged(env) ? 'login set' : 'public access (no login)'; },
+    auth(env) { return type === 'shimmie' ? 'no login needed' : logged(env) ? 'login set' : 'public access (no login)'; },
 
     async media(raw, request, env, fetchImpl = fetch) {
       let u;
@@ -101,6 +104,14 @@ export function makeCustom({ id, label, base, type }) {
     async search(q, env, fetchImpl = fetch) {
       const tags = buildTags(q, type);
       console.log(`  [${id}] page ${q.page}  tags: ${tags || '(none)'}`);
+      if (type === 'shimmie') {
+        // Shimmie's compat API takes plain tags only, like paheal.
+        const tags = [...q.include.map(cleanTag), ...q.exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-' && !/^(score|rating|sort|order|ratio):/i.test(t)).join(' ');
+        const page = q.page + 1;
+        const { count, posts: raw } = parsePosts(await call('api/danbooru/find_posts', { tags, limit: String(q.limit), page: String(page) }, env, fetchImpl));
+        const ok = raw.filter(p => p.id && p.file_url).map(normalize);
+        return { posts: ok, hasMore: (page - 1) * q.limit + raw.length < count };
+      }
       const data = type === 'gelbooru'
         ? await call('index.php', { page: 'dapi', s: 'post', q: 'index', json: '1', limit: String(q.limit), pid: String(q.page), tags }, env, fetchImpl)
         : await call(type === 'moebooru' ? 'post.json' : 'posts.json', { tags, limit: String(q.limit), page: String(q.page + 1) }, env, fetchImpl);
@@ -118,6 +129,11 @@ export function makeCustom({ id, label, base, type }) {
       if (term.length < 2) return [];
       let data;
       try {
+        if (type === 'shimmie') {
+          const xml = await call('api/danbooru/find_tags', { name: term }, env, fetchImpl), out = [], re = /<tag\b([^>]*?)\/?>/g; let m;
+          while ((m = re.exec(xml))) { const a = attrs(m[1]); if (a.name) out.push({ name: a.name, count: Number(a.counts) || 0, type: 'general' }); }
+          return out.slice(0, 10);
+        }
         data = type === 'gelbooru' ? await call('index.php', { page: 'dapi', s: 'tag', q: 'index', json: '1', name_pattern: term + '%', orderby: 'count', limit: '10' }, env, fetchImpl)
           : type === 'moebooru' ? await call('tag.json', { name: term + '*', order: 'count', limit: '10' }, env, fetchImpl)
           : await call('tags.json', { 'search[name_matches]': term + '*', 'search[order]': 'count', limit: '10' }, env, fetchImpl);
