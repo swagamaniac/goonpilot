@@ -67,7 +67,12 @@ const visionVotes = () => {
   out.analysedNotVoted = Math.max(0, vision.count() - voted.size);
   return out;
 };
-const profiles = createProfiles({ dir: path.join(ROOT, 'data'), vision, md5Of: (site, id) => posts.get(`${site}:${id}`)?.md5 || null });
+const DATA = path.join(ROOT, 'data'), dataFile = (name) => path.join(DATA, name + '.json');
+const profiles = createProfiles({
+  open: (name) => fileStore(DATA, name),
+  has: (name) => existsSync(dataFile(name)),
+  retire: (name) => { if (existsSync(dataFile(name))) renameSync(dataFile(name), path.join(DATA, `${name}.removed-${Date.now()}.json`)); },
+  vision, md5Of: (site, id) => posts.get(`${site}:${id}`)?.md5 || null });
 const foryou = profiles.current;
 const postStore = fileStore(path.join(ROOT, 'data'), 'posts');
 const posts = createPostCache({ load: postStore.load, save: postStore.save });

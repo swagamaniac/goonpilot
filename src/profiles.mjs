@@ -1,10 +1,8 @@
-import { renameSync, existsSync } from 'node:fs';
-import path from 'node:path';
 import { createForYou } from './foryou.mjs';
-import { fileStore } from './foryou-store.mjs';
 
-export function createProfiles({ dir, now = Date.now, vision = null, md5Of = null }) {
-  const metaStore = fileStore(dir, 'profiles');
+// open(name) returns a { load, save, snapshot, flush } store; has(name) says whether it holds data; retire(name) sets a removed profile's data aside.
+export function createProfiles({ open, has, retire, now = Date.now, vision = null, md5Of = null }) {
+  const metaStore = open('profiles');
   const fileFor = (id) => id === 'default' ? 'foryou' : 'foryou-' + id;
   const engines = new Map();
 
@@ -21,7 +19,7 @@ export function createProfiles({ dir, now = Date.now, vision = null, md5Of = nul
   function engine(id) {
     let e = engines.get(id);
     if (!e) {
-      const store = fileStore(dir, fileFor(id));
+      const store = open(fileFor(id));
       const kind = meta.list.find(p => p.id === id)?.kind || 'normal';
       const fy = createForYou({ scope: kind, vision, md5Of, shared: kind === 'paheal-all' ? { votes: sharedVotes, md5: sharedMd5, seen: sharedSeen } : null, load: store.load, save: store.save, backup: store.snapshot, enabled: () => meta.enabled !== false, setEnabled: (v) => { meta.enabled = !!v; saveMeta(); } });
       e = { fy, store }; engines.set(id, e);
@@ -30,7 +28,7 @@ export function createProfiles({ dir, now = Date.now, vision = null, md5Of = nul
   }
 
   if (fresh) {
-    const probe = fileStore(dir, 'foryou').load();
+    const probe = open('foryou').load();
     meta = { v: 1, active: 'default', enabled: probe?.enabled !== false, list: [{ id: 'default', name: 'Default', created: now() }] };
     saveMeta();
   }
@@ -52,7 +50,7 @@ export function createProfiles({ dir, now = Date.now, vision = null, md5Of = nul
       if (!['normal', 'paheal-own', 'paheal-all'].includes(kind)) throw bad('Unknown profile type');
       if (meta.list.length >= 12) throw bad('Too many profiles');
       if (meta.list.some(p => p.name.toLowerCase() === name.toLowerCase())) throw bad('A profile with that name exists');
-      let id; do { id = 'p' + Math.random().toString(36).slice(2, 8); } while (find(id) || existsSync(path.join(dir, fileFor(id) + '.json')));
+      let id; do { id = 'p' + Math.random().toString(36).slice(2, 8); } while (find(id) || has(fileFor(id)));
       meta.list.push({ id, name, ...(kind !== 'normal' ? { kind } : {}), created: now() }); saveMeta(); return id;
     },
     switchTo(id) {
@@ -77,8 +75,7 @@ export function createProfiles({ dir, now = Date.now, vision = null, md5Of = nul
       if (id === meta.active) this.switchTo('default');
       const e = engine(id); e.store.flush(); e.store.snapshot('before-remove');
       engines.delete(id);
-      const f = path.join(dir, fileFor(id) + '.json');
-      if (existsSync(f)) renameSync(f, path.join(dir, `${fileFor(id)}.removed-${Date.now()}.json`));
+      retire(fileFor(id));
       meta.list = meta.list.filter(p => p.id !== id); saveMeta();
     },
     resetAllLearning() { for (const p of meta.list) engine(p.id).fy.resetLearning(); },

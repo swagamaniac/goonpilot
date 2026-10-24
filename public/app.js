@@ -265,7 +265,7 @@ function setMode(m) {
 function renderLikedBar() { [...$('likedFilter').children].forEach(b => b.classList.toggle('on', b.dataset.f === S.liked.filter)); }
 $('likedFilter').onclick = e => { const b = e.target.closest('button'); if (b) enterLiked(b.dataset.f); };
 $('likedBtn').onclick = () => enterLiked();
-function startDownload(qs) { const x = document.createElement('a'); x.href = '/api/lib/download?' + qs; x.download = ''; document.body.append(x); x.click(); x.remove(); }
+function startDownload(qs) { const x = document.createElement('a'); x.href = 'api/lib/download?' + qs; x.download = ''; document.body.append(x); x.click(); x.remove(); }
 function renderSel() {
   const on = !!S.sel;
   $('selBtn').setAttribute('aria-pressed', String(on)); $('selBtn').classList.toggle('on', on); $('selBtn').textContent = on ? '✕ Cancel select' : '☑ Select';
@@ -277,7 +277,7 @@ function toggleSel(p, card) { const k = p.site + ':' + p.id; if (S.sel.has(k)) S
 $('selBtn').onclick = () => { S.sel = S.sel ? null : new Set(); document.querySelectorAll('.post.selected').forEach(c => c.classList.remove('selected')); renderSel(); };
 $('selAllBtn').onclick = () => { S.posts.forEach(p => S.sel.add(p.site + ':' + p.id)); document.querySelectorAll('.post').forEach(c => c.classList.add('selected')); renderSel(); };
 $('dlSelBtn').onclick = () => { if (S.sel?.size) { startDownload('items=' + [...S.sel].join(',')); toast(`Downloading ${S.sel.size} file(s)…`); } };
-$('dlListBtn').onclick = () => { const x = document.createElement('a'); x.href = '/api/lib/export?filter=' + S.liked.filter; x.download = ''; document.body.append(x); x.click(); x.remove(); toast('Preparing list…'); };
+$('dlListBtn').onclick = () => { const x = document.createElement('a'); x.href = 'api/lib/export?filter=' + S.liked.filter; x.download = ''; document.body.append(x); x.click(); x.remove(); toast('Preparing list…'); };
 $('dlAllBtn').onclick = () => { startDownload('filter=' + S.liked.filter); toast('Preparing ZIP… posts not saved locally yet are skipped'); };
 function enterLiked(filter) {
   S.sel = null; renderSel();
@@ -1277,7 +1277,8 @@ function renderSheet() {
       segField('Video quality (e621 / e6ai)', ['medium', 'auto', 'original', 'compatible'], S.videoQuality, v => ({ medium: 'Medium (720p)', auto: 'Auto', original: 'Original only', compatible: 'Compatible' })[v], v => { S.videoQuality = v; store.set('videoQuality', v); }),
       el('p', 'hint', 'Auto: the original (webm/VP9, full quality) when your browser can play it, otherwise the mp4 copy (max 1080p, 3 Mbit/s). Original only: always the original, never the copy, even if it fails to play. Compatible: always the mp4 copy.')
     );
-    body.append(
+    const pages = !!S.status?.pages;
+    if (!pages) body.append(
       segField('Keep liked pictures on this computer', [false, true], !!S.lib?.enabled, v => v ? 'On' : 'Off', async v => { try { S.lib = await lib('library', { enabled: v }); } catch (err) { toast(err.message); } renderSheet(); }),
       el('p', 'hint', `When on, a post you like is saved to data/library/ using the copy already loaded on screen (nothing is downloaded twice), and is shown from disk after that. Off: nothing new is saved; saved files stay and are still used.${S.lib ? ` Saved so far: ${S.lib.count}.` : ''}`)
     );
@@ -1290,12 +1291,13 @@ function renderSheet() {
       save.onclick = async () => {
         const vals = Object.fromEntries(inputs.filter(i => i.value.trim()).map(i => [i.dataset.k, i.value.trim()]));
         if (!Object.keys(vals).length) return;
-        try { await fyJson('keys', vals, undefined, '/api/'); S.status = await api.status(); toast(`${src.label} login saved to .dev.vars`); } catch (err) { toast(err.message); }
+        try { await fyJson('keys', vals, undefined, '/api/'); S.status = await api.status(); toast(`${src.label} login saved${pages ? ' in this browser' : ' to .dev.vars'}`); } catch (err) { toast(err.message); }
         renderSheet();
       };
       const row = el('div', 'field'); row.append(...inputs, save); body.append(row);
     }
     body.append(renderCustomSites());
+    if (pages) { body.append(el('p', 'hint', 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.')); body.append(renderBackup()); return; }
     body.append(el('p', 'hint', 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login.'));
     body.append(el('p', 'hint', 'e621 and e6ai images are loaded through your local server with your login.'));
     const rs = el('button', 'btn', '↻ Restart server (start-phone.bat)');
@@ -1314,6 +1316,26 @@ function renderSheet() {
     };
     body.append(rs);
   }
+}
+
+function renderBackup() {
+  const box = el('div');
+  box.append(el('h3', null, 'Backup'));
+  box.append(el('p', 'hint', 'This version keeps your likes, profiles, saved searches and sites in this browser only. Clearing site data deletes them, and iOS clears it after 7 days without a visit unless the page is added to the home screen. Save a backup file now and then (logins are not included).'));
+  const save = el('button', 'btn', 'Save backup file');
+  save.onclick = () => { const x = document.createElement('a'); x.href = 'api/pages/backup'; x.download = ''; document.body.append(x); x.click(); x.remove(); };
+  const pick = el('input'); pick.type = 'file'; pick.accept = '.json,application/json'; pick.hidden = true;
+  const load = el('button', 'btn', 'Restore from file');
+  load.onclick = () => {
+    if (!load.dataset.sure) { load.dataset.sure = '1'; load.textContent = 'Tap again: replaces everything stored here'; setTimeout(() => { delete load.dataset.sure; load.textContent = 'Restore from file'; }, 4000); return; }
+    pick.click();
+  };
+  pick.onchange = async () => {
+    const f = pick.files?.[0]; if (!f) return;
+    try { const b = JSON.parse(await f.text()); await fyJson('backup', b, undefined, 'api/pages/'); location.reload(); } catch (err) { toast(err.message || 'Not a backup file'); }
+  };
+  const row = el('div', 'field'); row.append(save, load, pick); box.append(row);
+  return box;
 }
 
 function renderArtists(body) {

@@ -1,0 +1,27 @@
+# Builds the browser-only version (pages/) and publishes it to GitHub Pages.
+# Manual only: run it from the Actions tab after turning on Pages (Settings > Pages > Source: GitHub Actions).
+name: Pages
+on: workflow_dispatch
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency: pages
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir _site
+          cp -r public/. _site/
+          cp -r src _site/src
+          cp pages/sw.js pages/boot.js pages/manifest.webmanifest _site/
+          sed -i 's#src="app.js"#src="boot.js"#; s#</title>#</title>\n<link rel="manifest" href="manifest.webmanifest">\n<meta name="apple-mobile-web-app-capable" content="yes">#' _site/index.html
+      - uses: actions/upload-pages-artifact@v3
+      - id: deploy
+        uses: actions/deploy-pages@v4
