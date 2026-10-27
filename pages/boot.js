@@ -4,8 +4,8 @@ const fail = (msg) => { document.body.prepend(Object.assign(document.createEleme
   if (!('serviceWorker' in navigator)) return fail('This browser has no service workers, so this version cannot run here. Use the local server version.');
   try { await navigator.storage?.persist?.(); } catch {}
   try {
-    // sw.js is bundled into one classic script by the Pages workflow: Firefox fails to install module service workers.
-    const register = () => navigator.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' });
+    // engine.js is bundled into one classic script by the Pages workflow. Not named sw.js: ad-block lists block that name.
+    const register = () => navigator.serviceWorker.register('engine.js', { scope: './', updateViaCache: 'none' });
     try { await register(); } catch { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); await register(); }
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, { once: true }); setTimeout(r, 4000); });
