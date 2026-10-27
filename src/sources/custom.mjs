@@ -7,6 +7,7 @@ export const CUSTOM_TYPES = { gelbooru: 'Gelbooru (like rule34)', shimmie: 'Shim
 
 const MAX_TAGS_LEN = 2000;
 const TYPE_BY_NUMBER = { 0: 'general', 1: 'artist', 3: 'copyright', 4: 'character', 5: 'meta' };
+const TYPE_BY_NAME = { artist: 'artist', character: 'character', copyright: 'copyright', metadata: 'meta' }; // gelbooru.com sends names
 const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
 const decodeEntities = (s) => String(s)
   .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
@@ -35,13 +36,13 @@ const sameSite = (u, base) => {
   return u.hostname === base.hostname || u.hostname === root || u.hostname.endsWith('.' + root);
 };
 
-export function makeCustom({ id, label, base, type, envPrefix }) {
+export function makeCustom({ id, label, base, type, envPrefix, userKey = 'USERNAME' }) {
   const prefix = envPrefix || `CUSTOM_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
   const site = String(base).replace(/\/+$/, ''), baseUrl = new URL(site);
   const extra = { custom: true, type, base: site };
   if (type === 'e621') return { ...makeE621ng({ id, label, site, domain: baseUrl.hostname.split('.').slice(-2).join('.'), envPrefix: prefix }), ...extra };
 
-  const ENV_USER = `${prefix}_USERNAME`, ENV_KEY = `${prefix}_API_KEY`;
+  const ENV_USER = `${prefix}_${userKey}`, ENV_KEY = `${prefix}_API_KEY`;
   const viaProxy = (u) => { if (!u) return ''; try { return `/api/${id}/media?u=${encodeURIComponent(new URL(u, site + '/').href)}`; } catch { return ''; } };
   const logged = (env) => !!(env[ENV_USER] && env[ENV_KEY]);
   const authParams = (env) => !logged(env) || type === 'shimmie' ? {} : type === 'gelbooru' ? { user_id: env[ENV_USER], api_key: env[ENV_KEY] }
@@ -115,7 +116,7 @@ export function makeCustom({ id, label, base, type, envPrefix }) {
       const data = type === 'gelbooru'
         ? await call('index.php', { page: 'dapi', s: 'post', q: 'index', json: '1', limit: String(q.limit), pid: String(q.page), tags }, env, fetchImpl)
         : await call(type === 'moebooru' ? 'post.json' : 'posts.json', { tags, limit: String(q.limit), page: String(q.page + 1) }, env, fetchImpl);
-      const raw = Array.isArray(data) ? data : Array.isArray(data?.post) ? data.post : Array.isArray(data?.posts) ? data.posts : null;
+      const raw = Array.isArray(data) ? data : Array.isArray(data?.post) ? data.post : Array.isArray(data?.posts) ? data.posts : data?.['@attributes'] ? [] : null;
       if (!raw) throw Object.assign(new Error(data?.message || `Unexpected answer from ${label}`), { status: 502 });
       const ok = raw.filter(p => p && p.id && p.file_url).map(normalize);
       let posts = ok;
@@ -139,7 +140,7 @@ export function makeCustom({ id, label, base, type, envPrefix }) {
           : await call('tags.json', { 'search[name_matches]': term + '*', 'search[order]': 'count', limit: '10' }, env, fetchImpl);
       } catch { return []; }
       const list = Array.isArray(data) ? data : Array.isArray(data?.tag) ? data.tag : [];
-      return list.slice(0, 10).map(t => ({ name: decodeEntities(t.name || ''), count: Number(t.count ?? t.post_count) || 0, type: TYPE_BY_NUMBER[t.type ?? t.category] || 'general' })).filter(t => t.name);
+      return list.slice(0, 10).map(t => ({ name: decodeEntities(t.name || ''), count: Number(t.count ?? t.post_count) || 0, type: TYPE_BY_NUMBER[t.type ?? t.category] || TYPE_BY_NAME[t.type] || 'general' })).filter(t => t.name);
     }
   };
 }

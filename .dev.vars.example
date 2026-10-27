@@ -15,6 +15,10 @@ E6AI_API_KEY=
 DANBOORU_USERNAME=
 DANBOORU_API_KEY=
 
+# Gelbooru (API key needed for the API). gelbooru.com > My Account > Options > API Access Credentials
+GELBOORU_API_KEY=
+GELBOORU_USER_ID=
+
 # Derpibooru (optional, API key only). Key: derpibooru.org > Account > API key
 DERPIBOORU_API_KEY=
 

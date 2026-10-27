@@ -65,7 +65,7 @@ async function pullUi() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { pullUi(); loadArtists(); } });
 
-const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal', 'danbooru', 'derpibooru', 'sankaku'];
+const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal', 'danbooru', 'gelbooru', 'derpibooru', 'sankaku'];
 const ALL_SITES = [...BUILTIN_SITES, ...store.get('customSites', []).filter(x => typeof x === 'string' && !BUILTIN_SITES.includes(x))];
 
 const MODS = ['+', '-', '~'];
