@@ -1,4 +1,4 @@
-// GitHub Pages backend: runs the same API code as server.mjs inside a service worker.
+// GitHub Pages backend (bundled into one classic script by the Pages workflow): runs the same API code as server.mjs inside a service worker.
 // Everything is kept in this browser's IndexedDB; nothing here talks to anything but the booru sites.
 import { handleApi, setCustomSources, checkCustom } from './src/api.mjs';
 import { createProfiles } from './src/profiles.mjs';
