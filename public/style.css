@@ -46,12 +46,12 @@ button { cursor: pointer; }
 .iconbtn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .search { position: relative; flex: 1 1 180px; min-width: 150px; }
 .search input {
-  width: 100%; box-sizing: border-box; height: 40px; border-radius: 12px;
+  width: 100%; box-sizing: border-box; height: 38px; border-radius: 10px;
   background: var(--surface); border: 1px solid var(--line); padding: 0 12px;
 }
 .search input::placeholder { color: var(--muted); }
 .suggest {
-  position: absolute; left: 0; right: 0; top: 44px; background: var(--surface-2);
+  position: absolute; left: 0; right: 0; top: 42px; background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 12px; overflow: hidden; z-index: 30;
   max-height: 50vh; overflow-y: auto;
 }
@@ -86,7 +86,8 @@ button { cursor: pointer; }
 .filters select, .filters input { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; height: 30px; padding: 0 6px; }
 .filters input { width: 64px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg button { background: var(--surface); border: 0; padding: 5px 9px; font-size: 12px; }
+.seg button { background: var(--surface); border: 0; height: 28px; padding: 0 10px; font-size: 12px; }
+.seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); }
 
 .status {
@@ -184,7 +185,9 @@ button { cursor: pointer; }
 .extlink { color: var(--accent); font-size: 14px; }
 .toast { position: fixed; z-index: 60; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 13px; }
 .hud .iconbtn.wide { min-width: 44px; }
-.searchbtn { height: 40px; flex: none; position: relative; }
+.searchbtn { flex: none; position: relative; }
+.bar .row .iconbtn { height: 38px; }
+.fybar .iconbtn { height: 30px; border-radius: 8px; font-size: 12px; }
 .searchbtn.pending::after { content: ""; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--neg); border: 2px solid var(--bg); }
 .searchbtn:disabled { opacity: .5; }
 #sites button { min-width: 52px; }
