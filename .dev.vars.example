@@ -10,3 +10,10 @@ E621_API_KEY=
 # e6ai (same software as e621). API key: e6ai.net > Account > Manage API Access
 E6AI_USERNAME=
 E6AI_API_KEY=
+
+# Danbooru (optional, anonymous works but allows only 2 tags per search). API key: danbooru.donmai.us > My Account > API Key
+DANBOORU_USERNAME=
+DANBOORU_API_KEY=
+
+# Derpibooru (optional, API key only). Key: derpibooru.org > Account > API key
+DERPIBOORU_API_KEY=

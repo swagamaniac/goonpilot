@@ -35,8 +35,8 @@ const sameSite = (u, base) => {
   return u.hostname === base.hostname || u.hostname === root || u.hostname.endsWith('.' + root);
 };
 
-export function makeCustom({ id, label, base, type }) {
-  const prefix = `CUSTOM_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+export function makeCustom({ id, label, base, type, envPrefix }) {
+  const prefix = envPrefix || `CUSTOM_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
   const site = String(base).replace(/\/+$/, ''), baseUrl = new URL(site);
   const extra = { custom: true, type, base: site };
   if (type === 'e621') return { ...makeE621ng({ id, label, site, domain: baseUrl.hostname.split('.').slice(-2).join('.'), envPrefix: prefix }), ...extra };

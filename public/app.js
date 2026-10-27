@@ -14,7 +14,7 @@ function timeAgo(iso) {
 'use strict';
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'sound', 'tbarOn', 'videoQuality'];
+const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'sound', 'tbarOn', 'videoQuality'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -55,7 +55,7 @@ async function pullUi() {
       try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {}
       if (k === 'hotkeys') S.hk = { ...HK_DEFAULT, ...v }; else S[k] = k === 'fill' ? !!v : v;
     }
-    renderHints(); soundIcon(); updTouchBar(); applyGestures();
+    renderHints(); soundIcon(); updTouchBar(); applyGestures(); render.sites();
     const srvSeen = ui.seen && typeof ui.seen === 'object' ? ui.seen : {};
     for (const [k, v] of Object.entries(srvSeen)) { const cur = S.seen[k] || (S.seen[k] = {}); for (const [site, id] of Object.entries(v)) cur[site] = Math.max(cur[site] || 0, id); }
     store.set('seen', S.seen);
@@ -65,7 +65,7 @@ async function pullUi() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { pullUi(); loadArtists(); } });
 
-const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal'];
+const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal', 'danbooru', 'derpibooru'];
 const ALL_SITES = [...BUILTIN_SITES, ...store.get('customSites', []).filter(x => typeof x === 'string' && !BUILTIN_SITES.includes(x))];
 
 const MODS = ['+', '-', '~'];
@@ -104,6 +104,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false,
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
@@ -843,9 +844,12 @@ const render = {
   },
   sites() {
     const g = $('sites'); g.replaceChildren();
+    const hidden = ALL_SITES.filter(x => S.hiddenSites.includes(x));
     for (const site of ALL_SITES) {
+      const hid = hidden.includes(site);
+      if (hid && !S.showHidden && !S.sites.includes(site)) continue;
       const src = S.status?.sources?.find(x => x.id === site);
-      const b = el('button', S.sites.includes(site) ? 'on' : null, site); b.type = 'button';
+      const b = el('button', [S.sites.includes(site) && 'on', hid && 'hid'].filter(Boolean).join(' ') || null, site); b.type = 'button';
       b.setAttribute('aria-pressed', String(S.sites.includes(site)));
       if (src && !src.configured) b.title = `${site}: ${src.auth}`;
       b.onclick = () => {
@@ -854,6 +858,12 @@ const render = {
       };
       g.append(b);
     }
+    if (!hidden.length) return;
+    const more = el('button', 'more', S.showHidden ? '−' : `+${hidden.length}`); more.type = 'button';
+    more.title = S.showHidden ? 'Collapse hidden sites' : `${hidden.length} hidden ${hidden.length > 1 ? 'sites' : 'site'}. Show them here, or unhide in Settings → Sites`;
+    more.setAttribute('aria-label', more.title);
+    more.onclick = () => { S.showHidden = !S.showHidden; render.sites(); };
+    g.append(more);
   },
   searchBtn() {
     const b = $('searchBtn');
@@ -1334,7 +1344,7 @@ function renderSheet() {
     logins.append(el('p', 'hint', pages
       ? 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.'
       : 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login. e621 and e6ai images are loaded through your local server with your login.'));
-    body.append(logins, renderCustomSites());
+    body.append(logins, renderSiteList(), renderCustomSites());
     if (pages) body.append(renderBackup());
     body.append(renderForYouSettings());
     if (pages) return;
@@ -1483,6 +1493,22 @@ function renderProfiles() {
     d.append(b);
   }
   return d;
+}
+function renderSiteList() {
+  const d = el('div', 'fybox'); d.append(el('h3', null, 'Sites'));
+  d.append(el('p', 'hint', 'Unticked sites drop out of the site picker. The +N button at the end of the picker shows them again.'));
+  const list = el('div', 'sitechecks');
+  for (const site of ALL_SITES) {
+    const lab = el('label'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !S.hiddenSites.includes(site);
+    cb.onchange = () => {
+      S.hiddenSites = cb.checked ? S.hiddenSites.filter(x => x !== site) : [...new Set([...S.hiddenSites, site])];
+      store.set('hiddenSites', S.hiddenSites);
+      if (!cb.checked && S.sites.includes(site)) { S.sites = S.sites.filter(x => x !== site); if (!S.sites.length) S.sites = ALL_SITES.filter(x => !S.hiddenSites.includes(x)).slice(0, 1); markDirty(); }
+      else render.sites();
+    };
+    lab.append(cb, ' ' + site); list.append(lab);
+  }
+  d.append(list); return d;
 }
 function renderCustomSites() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Custom sites'));

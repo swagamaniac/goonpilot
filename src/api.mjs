@@ -2,8 +2,11 @@ import { rule34, proxifyPost } from './sources/rule34.mjs';
 import { e621, e6ai } from './sources/e621.mjs';
 import { paheal } from './sources/paheal.mjs';
 import { makeCustom, CUSTOM_TYPES } from './sources/custom.mjs';
+import { derpibooru } from './sources/derpibooru.mjs';
 
-const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal };
+// Danbooru reuses the custom-site adapter, minus the custom flag so it can't be removed in Settings.
+const danbooru = { ...makeCustom({ id: 'danbooru', label: 'danbooru', base: 'https://danbooru.donmai.us', type: 'danbooru', envPrefix: 'DANBOORU' }), custom: false };
+const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal, [danbooru.id]: danbooru, [derpibooru.id]: derpibooru };
 let SOURCES = { ...BUILTIN };
 const RESERVED = new Set([...Object.keys(BUILTIN), 'lib', 'foryou', 'vision', 'keys', 'status', 'boorus']);
 
@@ -241,7 +244,7 @@ export function buildLikedCsv(fy, posts, filter = 'likes') {
   const rows = ['site,id,link,file,vote'];
   for (const v of fy.listVotes({ filter, offset: 0, limit: 100000 }).items) {
     const snap = posts.get(`${v.site}:${v.id}`);
-    const link = snap?.link || ({ rule34: `https://rule34.xxx/index.php?page=post&s=view&id=${v.id}`, e621: `https://e621.net/posts/${v.id}`, e6ai: `https://e6ai.net/posts/${v.id}`, paheal: `https://rule34.paheal.net/post/view/${v.id}` })[v.site] || '';
+    const link = snap?.link || ({ rule34: `https://rule34.xxx/index.php?page=post&s=view&id=${v.id}`, e621: `https://e621.net/posts/${v.id}`, e6ai: `https://e6ai.net/posts/${v.id}`, paheal: `https://rule34.paheal.net/post/view/${v.id}`, danbooru: `https://danbooru.donmai.us/posts/${v.id}`, derpibooru: `https://derpibooru.org/images/${v.id}` })[v.site] || '';
     rows.push([v.site, v.id, link, (snap && !snap.gone && upstreamUrl(snap.file)) || '', v.vote].join(','));
   }
   return '\ufeff' + rows.join('\r\n') + '\r\n';
