@@ -1269,29 +1269,32 @@ function renderSheet() {
   } else if (tab === 'super') {
     renderSupertags(body);
   } else {
-    body.append(
+    const pages = !!S.status?.pages;
+    body.append(group('Feed',
       segField('Posts per request (per site)', [10, 20, 50, 100], S.pageSize, String, v => { S.pageSize = v; store.set('pageSize', v); markDirty(); }),
       el('p', 'hint', 'Applies from your next search.'),
       segField('Start loading more', [1, 2, 3, 5], S.aheadScreens, v => v + (v === 1 ? ' screen' : ' screens'), v => { S.aheadScreens = v; store.set('aheadScreens', v); observeSentinel(); }),
       el('p', 'hint', 'How far before the bottom of the feed the next page is requested. In fullscreen it loads when 5 posts remain.'),
-      segField('Fullscreen image quality', [false, true], S.original, v => v ? 'Original' : 'Sample', v => { S.original = v; store.set('original', v); }),
-      el('p', 'hint', 'Original files can be several MB each. Sample is plenty for a phone.'),
       segField('Duplicate posts (same file, e.g. on two sites)', [false, true], S.dupes, v => v ? 'Show' : 'Hide', v => { S.dupes = v; store.set('dupes', v); markDirty(); }),
-      el('p', 'hint', 'Detected by the file checksum (MD5). Applies from your next search.'),
+      el('p', 'hint', 'Detected by the file checksum (MD5). Applies from your next search.')
+    ));
+    const view = group('Fullscreen & video',
+      segField('Image quality', [false, true], S.original, v => v ? 'Original' : 'Sample', v => { S.original = v; store.set('original', v); }),
+      el('p', 'hint', 'Original files can be several MB each. Sample is plenty for a phone.'),
       segField('Auto-advance delay (images)', [3, 5, 8, 12], S.autoDelay, v => v + ' s', v => { S.autoDelay = v; store.set('autoDelay', v); }),
       segField('Loop videos', [true, false], S.loopVideos, v => v ? 'On' : 'Off', v => { S.loopVideos = v; store.set('loopVideos', v); const cur = viewer.slides[S.vIndex]?.querySelector('video'); if (cur) cur.loop = v && !S.auto; }),
       el('p', 'hint', 'Off: a video stops at the end, and "next after vote" waits for it to finish before moving on. Auto-advance never loops.'),
       segField('Video quality (e621 / e6ai)', ['medium', 'auto', 'original', 'compatible'], S.videoQuality, v => ({ medium: 'Medium (720p)', auto: 'Auto', original: 'Original only', compatible: 'Compatible' })[v], v => { S.videoQuality = v; store.set('videoQuality', v); }),
       el('p', 'hint', 'Auto: the original (webm/VP9, full quality) when your browser can play it, otherwise the mp4 copy (max 1080p, 3 Mbit/s). Original only: always the original, never the copy, even if it fails to play. Compatible: always the mp4 copy.')
     );
-    const pages = !!S.status?.pages;
-    if (!pages) body.append(
+    if (!pages) view.append(
       segField('Keep liked pictures on this computer', [false, true], !!S.lib?.enabled, v => v ? 'On' : 'Off', async v => { try { S.lib = await lib('library', { enabled: v }); } catch (err) { toast(err.message); } renderSheet(); }),
       el('p', 'hint', `When on, a post you like is saved to data/library/ using the copy already loaded on screen (nothing is downloaded twice), and is shown from disk after that. Off: nothing new is saved; saved files stay and are still used.${S.lib ? ` Saved so far: ${S.lib.count}.` : ''}`)
     );
-    body.append(renderForYouSettings());
+    body.append(view);
+    const logins = group('Site logins');
     for (const src of S.status?.sources || []) {
-      body.append(el('p', src.configured ? 'ok' : 'hint', `${src.label}: ${src.auth}`));
+      logins.append(el('p', src.configured ? 'ok' : 'hint', `${src.label}: ${src.auth}`));
       if (!src.keys?.length) continue;
       const inputs = src.keys.map(k => { const i = el('input'); i.type = 'password'; i.autocomplete = 'off'; i.placeholder = `${k.name} (${k.set ? 'set' : 'not set'})`; i.dataset.k = k.name; return i; });
       const save = el('button', 'btn', 'Save');
@@ -1301,13 +1304,16 @@ function renderSheet() {
         try { await fyJson('keys', vals, undefined, '/api/'); S.status = await api.status(); toast(`${src.label} login saved${pages ? ' in this browser' : ' to .dev.vars'}`); } catch (err) { toast(err.message); }
         renderSheet();
       };
-      const row = el('div', 'field'); row.append(...inputs, save); body.append(row);
+      const row = el('div', 'field'); row.append(...inputs, save); logins.append(row);
     }
-    body.append(renderCustomSites());
-    if (pages) { body.append(el('p', 'hint', 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.')); body.append(renderBackup()); return; }
-    body.append(el('p', 'hint', 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login.'));
-    body.append(el('p', 'hint', 'e621 and e6ai images are loaded through your local server with your login.'));
-    const rs = el('button', 'btn', '↻ Restart server (start-phone.bat)');
+    logins.append(el('p', 'hint', pages
+      ? 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.'
+      : 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login. e621 and e6ai images are loaded through your local server with your login.'));
+    body.append(logins, renderCustomSites());
+    if (pages) body.append(renderBackup());
+    body.append(renderForYouSettings());
+    if (pages) return;
+    const rs = el('button', 'btn ghost', '↻ Restart server (start-phone.bat)');
     rs.onclick = async () => {
       if (!rs.dataset.sure) {
         rs.dataset.sure = '1'; rs.textContent = 'Tap again to restart (app is down a few seconds)';
@@ -1321,13 +1327,13 @@ function renderSheet() {
       }
       rs.textContent = 'Server did not come back. Check the PC.';
     };
-    body.append(rs);
+    body.append(group('Server', rs));
   }
 }
+const group = (title, ...kids) => { const d = el('div', 'fybox'); d.append(el('h3', null, title), ...kids); return d; };
 
 function renderBackup() {
-  const box = el('div');
-  box.append(el('h3', null, 'Backup'));
+  const box = group('Backup & sync');
   box.append(el('p', 'hint', 'This version keeps your likes, profiles, saved searches and sites in this browser only. Clearing site data deletes them, and iOS clears it after 7 days without a visit unless the page is added to the home screen. Save a backup file now and then (logins are not included).'));
   const save = el('button', 'btn', 'Save backup file');
   save.onclick = () => { const x = document.createElement('a'); x.href = 'api/pages/backup'; x.download = ''; document.body.append(x); x.click(); x.remove(); };
@@ -1341,19 +1347,19 @@ function renderBackup() {
     const f = pick.files?.[0]; if (!f) return;
     try { const b = JSON.parse(await f.text()); await fyJson('backup', b, undefined, 'api/pages/'); location.reload(); } catch (err) { toast(err.message || 'Not a backup file'); }
   };
-  const row = el('div', 'field'); row.append(save, load, pick); box.append(row);
+  const row = el('div', 'inline'); row.append(save, load, pick); box.append(row);
   box.append(renderDrive());
   return box;
 }
 
 let driveMod = null;
 function renderDrive() {
-  const box = el('div');
+  const box = el('div', 'form');
   const signedIn = driveMod?.signedIn();
   box.append(el('p', 'hint', signedIn
     ? 'Syncing to your Google Drive every few minutes and when you leave the page (one file in a hidden app folder; logins are not included). Sign in again after a reload or after an hour.'
     : 'Optional: keep a copy in your own Google Drive. Off until you sign in; nothing is sent to Google before that.'));
-  const row = el('div', 'field');
+  const row = el('div', 'inline');
   const fail = (err) => toast(err.message || 'Google Drive sync failed');
   if (!signedIn) {
     const b = el('button', 'btn', 'Sign in with Google to sync');
@@ -1415,7 +1421,7 @@ function renderArtists(body) {
 }
 
 function renderProfiles() {
-  const d = el('div', 'fybox'); d.append(el('h3', null, '👤 Profiles'));
+  const d = el('div', 'fybox'); d.append(el('h3', null, 'Profiles'));
   d.append(el('p', 'hint', 'Each profile learns from its own likes and dislikes. “Default” is your original data and is never changed by other profiles.'));
   const P = S.profiles; if (!P) return d;
   for (const p of P.profiles) {
@@ -1454,12 +1460,12 @@ function renderProfiles() {
   return d;
 }
 function renderCustomSites() {
-  const d = el('div', 'fybox'); d.append(el('h3', null, '＋ Custom sites'));
+  const d = el('div', 'fybox'); d.append(el('h3', null, 'Custom sites'));
   d.append(el('p', 'hint', 'Add another booru by its address and API type. Only the sites you add are contacted. The list is saved in data/boorus.json and its login fields appear above after adding. Untested.'));
   const refresh = async () => { try { S.status = await api.status(); syncSites(S.status); render.sites(); } catch {} renderSheet(); };
   const call = async (body) => { try { await fyJson('boorus', body, undefined, '/api/'); await refresh(); } catch (err) { toast(err.message); } };
   for (const src of (S.status?.sources || []).filter(x => x.custom)) {
-    const row = el('div', 'field'); row.append(el('span', 'grow', `${src.label} · ${src.base} · ${S.status.types?.[src.type] || src.type}`));
+    const row = el('div', 'item'); row.append(el('span', 'grow', `${src.label} · ${src.base} · ${S.status.types?.[src.type] || src.type}`));
     const rm = el('button', 'btn ghost', 'Remove');
     rm.onclick = () => { if (!rm.dataset.sure) { rm.dataset.sure = '1'; rm.textContent = 'Tap again to remove'; return; } call({ action: 'remove', id: src.id }); };
     row.append(rm); d.append(row);
@@ -1471,11 +1477,11 @@ function renderCustomSites() {
   for (const i of [name, base]) i.onkeydown = ev => ev.stopPropagation();
   const add = el('button', 'btn', 'Add');
   add.onclick = () => { if (name.value.trim() && base.value.trim()) call({ action: 'add', label: name.value, base: base.value, type: type.value }); };
-  const row = el('div', 'field'); row.append(name, base, type, add); d.append(row);
+  const row = el('div', 'form'); row.append(name, base, type, add); d.append(row);
   return d;
 }
 function renderHotkeys() {
-  const d = el('div', 'fybox hk-box'); d.append(el('h3', null, '⌨ Hotkeys'));
+  const d = el('div', 'fybox hk-box'); d.append(el('h3', null, 'Hotkeys'));
   d.append(el('p', 'hint', 'Click a key, then press the new one. Click it again to cancel. Numpad keys count as the same digit.'));
   for (const a of Object.keys(HK_LABEL)) {
     const row = el('div', 'hkrow'); row.append(el('span', null, HK_LABEL[a]));
@@ -1521,7 +1527,7 @@ function renderForYouSettings() {
   const det = el('details', 'fydrop');
   det.open = !!S.fyOpen;
   det.addEventListener('toggle', () => { S.fyOpen = det.open; });
-  det.append(el('summary', null, '✦ For you (beta) settings'));
+  det.append(el('summary', null, 'For you (beta)'));
   const box = el('div', 'fybox');
   det.append(box);
   box.append(renderProfiles());
