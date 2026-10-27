@@ -307,7 +307,7 @@ header.bar.bar-hidden { transform: translateY(-110%); }
   #viewerRoot .hud .iconbtn { min-width: 0 !important; padding-left: 8px !important; padding-right: 8px !important; }
 }
 
-.vscroll, aside.details { touch-action: pan-y; }
+.vscroll { touch-action: pan-y; }
 
 .tbar { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; display: flex; gap: 10px; padding: 8px 12px; border-radius: 30px; background: rgba(0,0,0,.72); }
 .tbar[hidden] { display: none; }
@@ -337,7 +337,6 @@ header.bar.bar-hidden { transform: translateY(-110%); }
 
 html, body, button, a { touch-action: manipulation; }
 @media (hover: none) and (pointer: coarse) { input, select, textarea { font-size: 16px !important; } }
-
 
 .tbar button.fillb { width: auto; min-width: 78px; padding: 0 16px; border-radius: 27px; font-size: 17px; font-weight: 600; letter-spacing: .2px; }
 

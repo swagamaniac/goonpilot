@@ -1388,9 +1388,9 @@ function renderDrive() {
 
 function renderArtists(body) {
   const names = Object.keys(S.artists).sort();
-  const row = el('div', 'field'), kind = el('select');
+  const row = el('div', 'inline'), kind = el('select');
   for (const [k, t] of [['artist', 'Artist'], ['character', 'Character'], ['tag', 'Tag']]) { const o = el('option', null, t); o.value = k; kind.append(o); }
-  const add = el('input'); add.className = 'fyinput'; add.placeholder = 'Add favorite (e.g. some_artist), Enter'; add.autocomplete = 'off'; add.spellcheck = false; add.style.flex = '1';
+  const add = el('input'); add.className = 'fyinput'; add.placeholder = 'Add favorite (e.g. some_artist), Enter'; add.autocomplete = 'off'; add.spellcheck = false;
   add.onkeydown = ev => {
     if (ev.key !== 'Enter') { ev.stopPropagation(); return; }
     ev.preventDefault(); ev.stopPropagation();
