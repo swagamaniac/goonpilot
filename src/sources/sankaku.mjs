@@ -1,4 +1,5 @@
-// Sankaku (chan.sankakucomplex.com / sankaku.app). Local server only: the API checks Origin and the CDN checks Referer.
+// Sankaku (chan.sankakucomplex.com / sankaku.app). Experimental on Pages: the API may check Origin and the CDN Referer,
+// which a browser can't set.
 // Media URLs from the API are signed and expire, so posts carry stable proxy refs (sankaku:<md5>:<kind>) that the
 // media route turns into a fresh CDN URL, from the last search when possible, otherwise with one md5 lookup.
 const API = 'https://sankakuapi.com';
@@ -14,6 +15,7 @@ const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
 const viaProxy = (md5, kind) => `/api/sankaku/media?u=${encodeURIComponent(`sankaku:${md5}:${kind}`)}`;
 const err = (msg, status) => Object.assign(new Error(msg), { status });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ON_PAGES = typeof ServiceWorkerGlobalScope !== 'undefined';
 
 // Login token, kept in memory and tied to the login it came from.
 let token = null;
@@ -138,10 +140,12 @@ export const sankaku = {
   label: 'sankaku',
   envKeys: ['SANKAKU_USERNAME', 'SANKAKU_PASSWORD'],
   minGap: 1000,
-  localOnly: true,
 
   configured() { return true; },
-  auth(env) { return env.SANKAKU_USERNAME && env.SANKAKU_PASSWORD ? `logged in as ${env.SANKAKU_USERNAME}` : 'public access (no login, some posts have no file)'; },
+  auth(env) {
+    const who = env.SANKAKU_USERNAME && env.SANKAKU_PASSWORD ? `logged in as ${env.SANKAKU_USERNAME}` : 'public access (no login, some posts have no file)';
+    return ON_PAGES ? who + '. Experimental in the web version, may not load: the local server is more reliable' : who;
+  },
 
   async media(raw, request, env, fetchImpl = fetch) {
     const m = REF.exec(String(raw || ''));
@@ -154,6 +158,7 @@ export const sankaku = {
       if (!hit) return new Response('Post not found on Sankaku', { status: 404 });
       let u; try { u = new URL(hit[kind]); } catch { return new Response('Bad media URL', { status: 502 }); }
       if (u.protocol !== 'https:' || !u.hostname.endsWith('.sankakucomplex.com')) return new Response('Host not allowed', { status: 403 });
+      if (ON_PAGES) return Response.redirect(u.href, 302);
       const h = { 'User-Agent': H['User-Agent'], Referer: H.Referer };
       const range = request.headers.get('range'); if (range) h.Range = range;
       res = await fetchImpl(u, { headers: h, signal: request.signal });

@@ -323,7 +323,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {
-    return json({ types: CUSTOM_TYPES, sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.localOnly ? { localOnly: true } : {}), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
+    return json({ types: CUSTOM_TYPES, sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
   }
 
   const m = /^\/api\/([a-z0-9_-]+)\/(posts|suggest|media|tagcheck)$/.exec(url.pathname);

@@ -148,9 +148,7 @@ function makeGate() {
 const gates = Object.fromEntries(ALL_SITES.map(s => [s, makeGate()]));
 function syncSites(status) {
   const custom = (status?.sources || []).filter(x => x.custom).map(x => x.id);
-  // On Pages the status leaves out local-only sites (Sankaku).
-  const known = new Set((status?.sources || []).map(x => x.id));
-  ALL_SITES.splice(0, ALL_SITES.length, ...BUILTIN_SITES.filter(x => !status?.pages || known.has(x)), ...custom);
+  ALL_SITES.splice(0, ALL_SITES.length, ...BUILTIN_SITES, ...custom);
   for (const id of custom) gates[id] ||= makeGate();
   store.set('customSites', custom);
   const kept = S.sites.filter(x => ALL_SITES.includes(x));
