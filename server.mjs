@@ -220,7 +220,7 @@ vision.init().catch((e) => logLine(`err     vision init ${e.message}`));
 server.listen(PORT, HOST, () => {
   const ok = env.RULE34_API_KEY && env.RULE34_USER_ID;
   console.log(`\n  Goonpilot running at  http://localhost:${PORT}  (this computer only)\n`);
-  console.log(ok ? '  rule34: API key loaded' : '  rule34: no API key, trying the public access (add RULE34_API_KEY and RULE34_USER_ID to .dev.vars if it refuses)');
+  console.log(ok ? '  rule34: API key loaded' : '  rule34: no API key. rule34 requires one: add RULE34_API_KEY and RULE34_USER_ID in Settings or .dev.vars');
   for (const [p, n] of [['E621', 'e621'], ['E6AI', 'e6ai']]) {
     console.log(env[p + '_USERNAME'] && env[p + '_API_KEY'] ? `  ${n.padEnd(7)} logged in as ${env[p + '_USERNAME']}` : `  ${n.padEnd(7)} no login, using public access (optional: ${p}_USERNAME and ${p}_API_KEY in .dev.vars)`);
   }

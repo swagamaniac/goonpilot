@@ -79,7 +79,7 @@ export const rule34 = {
 
   minGap: 600,
   configured() { return true; },
-  auth(env) { return env.RULE34_API_KEY && env.RULE34_USER_ID ? 'API key' : 'public access (no API key)'; },
+  auth(env) { return env.RULE34_API_KEY && env.RULE34_USER_ID ? 'API key' : 'API key required: add your key and user ID'; },
 
   async media(raw, request, env, fetchImpl = fetch) {
     let u;
