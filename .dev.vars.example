@@ -17,3 +17,8 @@ DANBOORU_API_KEY=
 
 # Derpibooru (optional, API key only). Key: derpibooru.org > Account > API key
 DERPIBOORU_API_KEY=
+
+# Sankaku (chan.sankakucomplex.com, optional; local server only). Your normal site login, no API key exists.
+# Without it some posts come back without a file. Passwords with # or quotes can't be saved from Settings.
+SANKAKU_USERNAME=
+SANKAKU_PASSWORD=

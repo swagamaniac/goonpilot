@@ -86,6 +86,7 @@ self.addEventListener('fetch', (event) => {
     await ready;
     const req = event.request;
     if (rest === '/api/pages/backup') return backup(req);
+    if (rest.startsWith('/api/sankaku/')) return Response.json({ error: 'Sankaku only works with the local server' }, { status: 404 });
     // A standalone Headers can carry sec-fetch-site, which a Request can't. Only this site's own pages
     // (and navigations into its scope) reach a service worker, so they count as same-origin.
     const h = new Headers([...req.headers]); h.set('sec-fetch-site', 'same-origin');
@@ -94,7 +95,7 @@ self.addEventListener('fetch', (event) => {
     let res;
     try { res = await handleApi(inner, env, browserFetch, ctx); }
     catch (e) { res = Response.json({ error: e.message || 'Failed' }, { status: 500 }); }
-    if (rest === '/api/status') { const s = await res.json(); res = Response.json({ ...s, pages: true }); }
+    if (rest === '/api/status') { const s = await res.json(); res = Response.json({ ...s, sources: (s.sources || []).filter(x => !x.localOnly), pages: true }); }
     event.waitUntil(new Promise(r => setTimeout(r, 250)).then(flush));
     return res;
   })());

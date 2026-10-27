@@ -3,10 +3,11 @@ import { e621, e6ai } from './sources/e621.mjs';
 import { paheal } from './sources/paheal.mjs';
 import { makeCustom, CUSTOM_TYPES } from './sources/custom.mjs';
 import { derpibooru } from './sources/derpibooru.mjs';
+import { sankaku } from './sources/sankaku.mjs';
 
 // Danbooru reuses the custom-site adapter, minus the custom flag so it can't be removed in Settings.
 const danbooru = { ...makeCustom({ id: 'danbooru', label: 'danbooru', base: 'https://danbooru.donmai.us', type: 'danbooru', envPrefix: 'DANBOORU' }), custom: false };
-const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal, [danbooru.id]: danbooru, [derpibooru.id]: derpibooru };
+const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal, [danbooru.id]: danbooru, [derpibooru.id]: derpibooru, [sankaku.id]: sankaku };
 let SOURCES = { ...BUILTIN };
 const RESERVED = new Set([...Object.keys(BUILTIN), 'lib', 'foryou', 'vision', 'keys', 'status', 'boorus']);
 
@@ -321,7 +322,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {
-    return json({ types: CUSTOM_TYPES, sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
+    return json({ types: CUSTOM_TYPES, sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.localOnly ? { localOnly: true } : {}), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
   }
 
   const m = /^\/api\/([a-z0-9_-]+)\/(posts|suggest|media|tagcheck)$/.exec(url.pathname);

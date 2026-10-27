@@ -65,7 +65,7 @@ async function pullUi() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { pullUi(); loadArtists(); } });
 
-const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal', 'danbooru', 'derpibooru'];
+const BUILTIN_SITES = ['rule34', 'e621', 'e6ai', 'paheal', 'danbooru', 'derpibooru', 'sankaku'];
 const ALL_SITES = [...BUILTIN_SITES, ...store.get('customSites', []).filter(x => typeof x === 'string' && !BUILTIN_SITES.includes(x))];
 
 const MODS = ['+', '-', '~'];
@@ -148,7 +148,9 @@ function makeGate() {
 const gates = Object.fromEntries(ALL_SITES.map(s => [s, makeGate()]));
 function syncSites(status) {
   const custom = (status?.sources || []).filter(x => x.custom).map(x => x.id);
-  ALL_SITES.splice(0, ALL_SITES.length, ...BUILTIN_SITES, ...custom);
+  // On Pages the status leaves out local-only sites (Sankaku).
+  const known = new Set((status?.sources || []).map(x => x.id));
+  ALL_SITES.splice(0, ALL_SITES.length, ...BUILTIN_SITES.filter(x => !status?.pages || known.has(x)), ...custom);
   for (const id of custom) gates[id] ||= makeGate();
   store.set('customSites', custom);
   const kept = S.sites.filter(x => ALL_SITES.includes(x));

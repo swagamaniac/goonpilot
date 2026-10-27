@@ -28,7 +28,7 @@ function loadVars() {
       if (m && !line.trim().startsWith('#')) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
   }
-  for (const k of Object.keys(process.env)) if (/^(RULE34|E621|E6AI|GELBOORU|DANBOORU|CUSTOM)_/.test(k)) env[k] = process.env[k];
+  for (const k of Object.keys(process.env)) if (/^(RULE34|E621|E6AI|GELBOORU|DANBOORU|SANKAKU|CUSTOM)_/.test(k)) env[k] = process.env[k];
   return env;
 }
 const env = loadVars();
