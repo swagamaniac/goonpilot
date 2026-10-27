@@ -30,6 +30,11 @@ export function createArtists({ load, save, now = Date.now }) {
         }
         ui.seen = seen;
       }
+      if (b.prefs && typeof b.prefs === 'object' && !Array.isArray(b.prefs)) {
+        const prefs = ui.prefs && typeof ui.prefs === 'object' ? ui.prefs : {};
+        for (const [k, v] of Object.entries(b.prefs).slice(0, 50)) if (/^[a-zA-Z]{1,20}$/.test(k) && v !== undefined && JSON.stringify(v).length < 2000) prefs[k] = v;
+        ui.prefs = prefs;
+      }
       save(get()); return ui;
     },
     remove(name) { delete get().artists[artistKey(name)]; save(get()); }

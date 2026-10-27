@@ -13,14 +13,28 @@ function timeAgo(iso) {
 }
 'use strict';
 
+// Settings that live in data/ and follow you across devices (the lists below sync too).
+const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'sound', 'tbarOn', 'videoQuality'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
-  set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(); }
+  set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
 };
-let uiTimer = null;
-function pushUi() {
+// Push only what changed, and fold in the server's history first so a stale tab can't wipe another device's searches.
+let uiTimer = null, uiKeys = new Set(), histAdd = false, prefDirty = new Set();
+function pushUi(k, add) {
+  uiKeys.add(k); if (add) histAdd = true;
   clearTimeout(uiTimer);
-  uiTimer = setTimeout(() => { lib('ui', { history: S.history, saved: S.saved, supers: S.supers, seen: S.seen }).catch(() => {}); }, 400);
+  uiTimer = setTimeout(async () => {
+    const keys = [...uiKeys], merge = histAdd, prefs = Object.fromEntries([...prefDirty].map(k => [k, store.get(k, null)])); uiKeys = new Set(); histAdd = false; prefDirty = new Set();
+    try {
+      if (merge) {
+        const { ui } = await lib('ui'), have = new Set(S.history.map(h => h.sig));
+        S.history = [...S.history, ...(Array.isArray(ui.history) ? ui.history : []).filter(h => !have.has(h.sig))].sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, HISTORY_MAX);
+        try { localStorage.setItem('goonpilot:history', JSON.stringify(S.history)); } catch {}
+      }
+      await lib('ui', Object.fromEntries(keys.map(k => [k, k === 'prefs' ? prefs : S[k]])));
+    } catch {}
+  }, 400);
 }
 async function pullUi() {
   try {
@@ -33,10 +47,19 @@ async function pullUi() {
       S[k] = first ? uniq([...srv, ...S[k]], mergeKey[k]) : srv;
       try { localStorage.setItem('goonpilot:' + k, JSON.stringify(S[k])); } catch {}
     }
+    const srvPrefs = ui.prefs && typeof ui.prefs === 'object' ? ui.prefs : {};
+    for (const k of PREFS) {
+      const v = srvPrefs[k], local = store.get(k, undefined);
+      if (v === undefined || v === null) { if (local !== undefined) { prefDirty.add(k); pushUi('prefs'); } continue; }
+      if (JSON.stringify(v) === JSON.stringify(local)) continue;
+      try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {}
+      if (k === 'hotkeys') S.hk = { ...HK_DEFAULT, ...v }; else S[k] = k === 'fill' ? !!v : v;
+    }
+    renderHints(); soundIcon(); updTouchBar(); applyGestures();
     const srvSeen = ui.seen && typeof ui.seen === 'object' ? ui.seen : {};
     for (const [k, v] of Object.entries(srvSeen)) { const cur = S.seen[k] || (S.seen[k] = {}); for (const [site, id] of Object.entries(v)) cur[site] = Math.max(cur[site] || 0, id); }
     store.set('seen', S.seen);
-    if (first) { store.set('uiMerged', true); pushUi(); }
+    if (first) { store.set('uiMerged', true); ['history', 'saved', 'supers', 'seen'].forEach(k => pushUi(k)); }
     if (!$('sheetRoot').hidden) renderSheet();
   } catch {}
 }
@@ -216,7 +239,7 @@ function trackNew(posts) {
     if (N.prev[p.site] && p.id > N.prev[p.site]) { p.isNew = true; N.n++; }
     cur[p.site] = Math.max(cur[p.site] || 0, p.id);
   }
-  store.set('seen', S.seen); pushUi();
+  store.set('seen', S.seen); pushUi('seen');
 }
 function searchArtists(names, kind = 'artist') {
   S.terms = names.map(n => ({ kind: 'tag', name: n, mod: names.length > 1 ? '~' : '+', type: kind === 'tag' ? 'general' : kind }));
@@ -668,7 +691,7 @@ function recordHistory() {
   const e = { sites: [...S.sites], terms: structuredClone(S.terms), sort: S.sort, rating: S.rating, minScore: S.minScore, t: Date.now() };
   const sig = JSON.stringify([e.sites, e.terms.map(t => [t.kind, t.name, t.mod]), e.sort, e.rating, e.minScore]);
   S.history = [{ ...e, sig }, ...S.history.filter(h => h.sig !== sig)].slice(0, HISTORY_MAX);
-  store.set('history', S.history);
+  store.set('history', S.history); pushUi('history', true);
 }
 function ago(t) {
   const m = Math.round((Date.now() - t) / 60000);
