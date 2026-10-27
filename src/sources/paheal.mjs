@@ -1,6 +1,6 @@
 
 const BASE = 'https://rule34.paheal.net';
-const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)' };
+const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)', Referer: BASE + '/' };
 
 const decodeEntities = (s) => String(s)
   .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))

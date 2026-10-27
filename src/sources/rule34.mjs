@@ -1,5 +1,6 @@
 
 const MAX_TAGS_LEN = 2000;
+const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)', Referer: 'https://rule34.xxx/' };
 
 const TAG_TYPES = {
   artist: 'artist', character: 'character', copyright: 'copyright',
@@ -86,7 +87,7 @@ export const rule34 = {
     const testBase = env.RULE34_MEDIA_BASE ? new URL(env.RULE34_MEDIA_BASE) : null;
     const allowed = testBase ? u.host === testBase.host : (u.protocol === 'https:' && (u.hostname === 'rule34.xxx' || u.hostname.endsWith('.rule34.xxx')));
     if (!allowed) return new Response('Host not allowed', { status: 403 });
-    const h = { 'User-Agent': 'Goonpilot/1.0 (personal)' };
+    const h = { ...UA };
     const range = request.headers.get('range'); if (range) h.Range = range;
     const res = await fetchImpl(u, { headers: h, signal: request.signal });
     const out = new Headers({ 'Cache-Control': 'private, max-age=86400' });
@@ -104,7 +105,7 @@ export const rule34 = {
       ...(env.RULE34_API_KEY && env.RULE34_USER_ID ? { api_key: env.RULE34_API_KEY, user_id: env.RULE34_USER_ID } : {})
     }).toString();
     console.log(`  [rule34] page ${q.page}  tags: ${buildTags(q) || '(none)'}`);
-    const res = await fetchImpl(url, { headers: { 'User-Agent': 'Goonpilot/1.0 (personal)' }, signal: AbortSignal.timeout(20000) });
+    const res = await fetchImpl(url, { headers: UA, signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw Object.assign(new Error(`rule34 answered ${res.status}`), { status: res.status === 429 ? 429 : 502 });
     const data = await readJson(res);
     if (!Array.isArray(data)) throw Object.assign(new Error(data && data.message ? data.message : 'Unexpected answer from rule34'), { status: 502 });
@@ -118,7 +119,7 @@ export const rule34 = {
     const base = env.RULE34_BASE || 'https://api.rule34.xxx';
     const url = new URL('/autocomplete.php', base);
     url.searchParams.set('q', cleanTag(text));
-    const res = await fetchImpl(url, { headers: { 'User-Agent': 'Goonpilot/1.0 (personal)' }, signal: AbortSignal.timeout(20000) });
+    const res = await fetchImpl(url, { headers: UA, signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw Object.assign(new Error(`rule34 answered ${res.status}`), { status: res.status === 429 ? 429 : 502 });
     const data = await readJson(res);
     if (!Array.isArray(data)) return [];

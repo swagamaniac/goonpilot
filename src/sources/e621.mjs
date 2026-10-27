@@ -35,7 +35,7 @@ export function makeE621ng({ id, label, site, domain, envPrefix }) {
 
   function headers(env) {
     const who = env[ENV_USER] ? `by ${env[ENV_USER]} on ${label}` : 'personal use';
-    const h = { 'User-Agent': `Goonpilot/1.0 (${who})`, Accept: 'application/json' };
+    const h = { 'User-Agent': `Goonpilot/1.0 (${who})`, Accept: 'application/json', Referer: site + '/' };
     if (env[ENV_USER] && env[ENV_KEY]) h.Authorization = 'Basic ' + btoa(`${env[ENV_USER]}:${env[ENV_KEY]}`);
     return h;
   }

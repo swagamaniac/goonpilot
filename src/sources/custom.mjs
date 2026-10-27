@@ -46,7 +46,7 @@ export function makeCustom({ id, label, base, type }) {
   const logged = (env) => !!(env[ENV_USER] && env[ENV_KEY]);
   const authParams = (env) => !logged(env) || type === 'shimmie' ? {} : type === 'gelbooru' ? { user_id: env[ENV_USER], api_key: env[ENV_KEY] }
     : type === 'moebooru' ? { login: env[ENV_USER], password_hash: env[ENV_KEY] } : { login: env[ENV_USER], api_key: env[ENV_KEY] };
-  const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)' };
+  const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)', Referer: site + '/' };
 
   async function call(path, params, env, fetchImpl) {
     const url = new URL(path, site + '/');

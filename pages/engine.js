@@ -56,7 +56,7 @@ function browserFetch(input, init = {}) {
   const auth = /^Basic (.+)$/.exec(h.get('authorization') || '');
   if (auth) { const [login, key] = atob(auth[1]).split(':'); u.searchParams.set('login', login); u.searchParams.set('api_key', key); }
   if (UPSTREAM_ONLY.test(u.hostname)) u.searchParams.set('_client', 'Goonpilot/1.0');
-  for (const k of ['authorization', 'user-agent', 'range']) h.delete(k);
+  for (const k of ['authorization', 'user-agent', 'referer', 'range']) h.delete(k);
   return fetch(u, { ...init, headers: h, referrerPolicy: 'no-referrer', credentials: 'omit' });
 }
 
