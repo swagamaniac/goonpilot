@@ -46,16 +46,19 @@
     <div class="seg" id="fyMedia" role="group" aria-label="Media type">
       <button data-t="all">All</button><button data-t="image">Images</button><button data-t="video">Videos</button>
     </div>
-    <button class="iconbtn" id="fyDebugBtn" title="Debug: explain why each post was picked" aria-label="Debug mode" aria-pressed="false">🐞 Debug</button>
-    <button class="iconbtn" id="fyPeekBtn" title="Peek: browse without marking posts as seen or analysing them (votes still count)" aria-label="Peek mode" aria-pressed="false">👁 Peek</button>
-    <button class="iconbtn" id="fyHelpBtn" title="How the modes work" aria-label="How the modes work" aria-expanded="false">?</button>
     <button class="iconbtn" id="fyWlBtn" aria-expanded="false" title="Must-have tags: every post contains ALL of them">✓ Must have</button>
     <button class="iconbtn" id="fyBlBtn" aria-expanded="false" title="Never show posts with these tags (For you only)">⛔ Never show</button>
-    <button class="iconbtn" id="fyNextBtn" aria-pressed="true" title="After voting, jump to the next post">⏭ Next after vote</button>
-    <button class="iconbtn" id="fyTasteBtn" aria-expanded="false" title="See which tags weigh the most in your taste profile">📊 Taste</button>
     <button class="iconbtn" id="fyBoostBtn" aria-expanded="false" title="Favorite tags, artists and characters">🎯 Favorites</button>
-    <button class="iconbtn" id="fyScoreBtn" aria-expanded="false" title="Only show posts with a score above a number, per site">▲ Min score</button>
-    <button class="iconbtn" id="fyIgnBtn" aria-expanded="false" title="Ignore whole tag types: not learned, scored or searched">🚫 Ignore ▾</button>
+    <button class="iconbtn" id="fyTasteBtn" aria-expanded="false" title="See which tags weigh the most in your taste profile">📊 Taste</button>
+    <button class="iconbtn" id="fyPeekBtn" title="Peek: browse without marking posts as seen or analysing them (votes still count)" aria-label="Peek mode" aria-pressed="false">👁 Peek</button>
+    <button class="iconbtn" id="fyMoreBtn" aria-expanded="false" title="More For you options">⋯ More</button>
+    <span class="fymore" id="fyMore" hidden>
+      <button class="iconbtn" id="fyScoreBtn" aria-expanded="false" title="Only show posts with a score above a number, per site">▲ Min score</button>
+      <button class="iconbtn" id="fyIgnBtn" aria-expanded="false" title="Ignore whole tag types: not learned, scored or searched">🚫 Ignore ▾</button>
+      <button class="iconbtn" id="fyNextBtn" aria-pressed="true" title="After voting, jump to the next post">⏭ Next after vote</button>
+      <button class="iconbtn" id="fyDebugBtn" title="Debug: explain why each post was picked" aria-label="Debug mode" aria-pressed="false">🐞 Debug</button>
+    </span>
+    <button class="iconbtn" id="fyHelpBtn" title="How the modes work" aria-label="How the modes work" aria-expanded="false">?</button>
     <span class="divepill" id="fyDive" hidden><span id="fyDiveText"></span> <button class="mini" id="fyDiveEnd">End</button></span>
   </div>
 <div class="fypanel" id="fyPanel" hidden></div>

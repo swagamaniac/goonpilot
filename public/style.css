@@ -342,3 +342,4 @@ html, body, button, a { touch-action: manipulation; }
 .details > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .field input, .fybox select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; height: 36px; padding: 0 10px; box-sizing: border-box; }
 .inline { flex-wrap: wrap; }
+.fymore { display: contents; }

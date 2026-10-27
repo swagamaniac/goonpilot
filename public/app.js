@@ -335,7 +335,7 @@ function renderFyBar() {
   const wl = pr.whitelist || [], bl = pr.blacklist || [];
   $('fyWlBtn').textContent = '✓ Must have' + (wl.length ? ` (${wl.length})` : ''); $('fyWlBtn').classList.toggle('on', !!wl.length);
   $('fyBlBtn').textContent = '⛔ Never show' + (bl.length ? ` (${bl.length})` : ''); $('fyBlBtn').classList.toggle('on', !!bl.length);
-  $('fyNextBtn').textContent = '⏭ Next after vote: ' + (S.autoNext ? 'on' : 'off'); $('fyNextBtn').classList.toggle('on', S.autoNext);
+  $('fyNextBtn').textContent = '⏭ Next after vote'; $('fyNextBtn').classList.toggle('on', S.autoNext);
   $('fyNextBtn').setAttribute('aria-pressed', String(S.autoNext));
   const bN = Object.keys(pr.boost || {}).length;
   $('fyBoostBtn').textContent = '🎯 Favorites' + (bN ? ` (${bN})` : ''); $('fyBoostBtn').classList.toggle('on', bN > 0);
@@ -343,6 +343,7 @@ function renderFyBar() {
   $('fyScoreBtn').textContent = '▲ Min score' + (msN ? ` (${msN})` : ''); $('fyScoreBtn').classList.toggle('on', msN > 0);
   const nIgn = [pr.ignoreArtists, pr.ignoreCopyright, pr.ignoreCharacters, pr.ignoreSpecies].filter(Boolean).length;
   $('fyIgnBtn').textContent = '🚫 Ignore' + (nIgn ? ` (${nIgn})` : '') + ' ▾'; $('fyIgnBtn').classList.toggle('on', nIgn > 0);
+  $('fyMoreBtn').classList.toggle('on', $('fyMore').hidden && (msN > 0 || nIgn > 0));
   if (!$('fyPanel').hidden) renderFyPanel();
   if (dive) $('fyDiveText').textContent = `🧭 Deep Dive from ${dive.site} #${dive.id}`;
 }
@@ -460,6 +461,7 @@ async function startDive(p) {
     enterForYou();
   } catch (err) { toast(err.message); }
 }
+$('fyMoreBtn').onclick = () => { const m = $('fyMore'); m.hidden = !m.hidden; $('fyMoreBtn').setAttribute('aria-expanded', String(!m.hidden)); renderFyBar(); };
 $('fyHelpBtn').onclick = () => { const h = $('fyHelp'); h.hidden = !h.hidden; $('fyHelpBtn').setAttribute('aria-expanded', String(!h.hidden)); };
 $('fyDiveEnd').onclick = async () => { try { await fyJson('dive', { end: true }); S.fyState = { ...S.fyState, dive: null }; enterForYou(); } catch (err) { toast(err.message); } };
 $('vDive').onclick = () => startDive(S.posts[S.vIndex]);
