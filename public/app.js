@@ -80,7 +80,7 @@ const S = {
   vIndex: 0, vOpen: false, auto: false,
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
-  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
+  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
@@ -529,7 +529,12 @@ function voteToast(msg, kind) {
 let hoverLockUntil = 0;
 function advanceFrom(p) {
   const i = S.posts.indexOf(p); if (i < 0) return;
-  if (S.vOpen) { if (S.posts[S.vIndex] === p) viewer.step(1, true); return; }
+  if (S.vOpen) {
+    if (S.posts[S.vIndex] !== p) return;
+    const v = viewer.slides[S.vIndex]?.querySelector('video');
+    if (v && !v.loop && !v.ended) { viewer.waitNext = p; return; }
+    viewer.step(1, true); return;
+  }
   const card = $('results').children[i + 1]; if (!card) { if (S.mode === 'foryou') loadMore(); return; }
   hoverLockUntil = Date.now() + 900; hovered.p = S.posts[i + 1];
   card.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -1274,6 +1279,8 @@ function renderSheet() {
       segField('Duplicate posts (same file, e.g. on two sites)', [false, true], S.dupes, v => v ? 'Show' : 'Hide', v => { S.dupes = v; store.set('dupes', v); markDirty(); }),
       el('p', 'hint', 'Detected by the file checksum (MD5). Applies from your next search.'),
       segField('Auto-advance delay (images)', [3, 5, 8, 12], S.autoDelay, v => v + ' s', v => { S.autoDelay = v; store.set('autoDelay', v); }),
+      segField('Loop videos', [true, false], S.loopVideos, v => v ? 'On' : 'Off', v => { S.loopVideos = v; store.set('loopVideos', v); const cur = viewer.slides[S.vIndex]?.querySelector('video'); if (cur) cur.loop = v && !S.auto; }),
+      el('p', 'hint', 'Off: a video stops at the end, and "next after vote" waits for it to finish before moving on. Auto-advance never loops.'),
       segField('Video quality (e621 / e6ai)', ['medium', 'auto', 'original', 'compatible'], S.videoQuality, v => ({ medium: 'Medium (720p)', auto: 'Auto', original: 'Original only', compatible: 'Compatible' })[v], v => { S.videoQuality = v; store.set('videoQuality', v); }),
       el('p', 'hint', 'Auto: the original (webm/VP9, full quality) when your browser can play it, otherwise the mp4 copy (max 1080p, 3 Mbit/s). Original only: always the original, never the copy, even if it fails to play. Compatible: always the mp4 copy.')
     );
@@ -1722,7 +1729,7 @@ const viewer = {
       else if (!near && s.firstChild) { s.querySelectorAll('video').forEach(unloadVideo); s.replaceChildren(); }
       const v = s.querySelector('video');
       if (v) {
-        if (i === S.vIndex) { loadVideo(v, S.posts[i]); v.loop = !S.auto; playVideo(v); }
+        if (i === S.vIndex) { loadVideo(v, S.posts[i]); v.loop = S.loopVideos && !S.auto; playVideo(v); }
         else unloadVideo(v);
       }
     }
@@ -1759,10 +1766,10 @@ const viewer = {
     if (p.type === 'video') {
       const v = document.createElement('video');
       v.poster = mu(p.preview);
-      v.playsInline = true; setMuted(v, true); v.loop = true;
+      v.playsInline = true; setMuted(v, true); v.loop = S.loopVideos;
       v.controls = true; v.preload = 'auto';
       v.setAttribute('playsinline', ''); v.disableRemotePlayback = true;
-      v.addEventListener('ended', () => { if (S.auto) this.step(1); });
+      v.addEventListener('ended', () => { const w = this.waitNext; this.waitNext = null; if (S.auto || w === S.posts[S.vIndex]) this.step(1); });
       fitMedia(v, p.w, p.h);
       return v;
     }
@@ -1825,7 +1832,7 @@ const viewer = {
   setAuto(on) {
     S.auto = on; $('vAuto').classList.toggle('on', on);
     clearTimeout(autoTimer);
-    const v = this.slides[S.vIndex]?.querySelector('video'); if (v) v.loop = !on;
+    const v = this.slides[S.vIndex]?.querySelector('video'); if (v) v.loop = S.loopVideos && !on;
     if (on) this.scheduleAuto();
   },
   scheduleAuto() {
