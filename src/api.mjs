@@ -358,6 +358,8 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       sort: ['id', 'score', 'updated', 'random', 'phone'].includes(p.get('sort')) ? p.get('sort') : 'id',
       rating: ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all',
       minScore: int(p.get('min'), 0, 0, 100000),
+      threshold: p.has('th') ? int(p.get('th'), 0, 0, 5) : null,
+      books: p.get('bk') === 'always' ? 'always' : null,
       pr: Math.min(5, Math.max(0.2, Number(p.get('pr')) || 0.46)),
       shape: ['portrait', 'landscape'].includes(p.get('shape')) ? p.get('shape') : 'any',
       page: int(p.get('page'), 0, 0, 200000),

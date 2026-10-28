@@ -14,7 +14,7 @@ function timeAgo(iso) {
 'use strict';
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'sound', 'tbarOn', 'videoQuality'];
+const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'skBooks', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -104,7 +104,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false,
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
@@ -186,7 +186,7 @@ const api = {
   posts(site, q, signal) {
     const p = new URLSearchParams({
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: String(Math.round(innerWidth / innerHeight * 1000) / 1000)
+      min: String(q.minScore), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: String(Math.round(innerWidth / innerHeight * 1000) / 1000)
     });
     return getJson(`/api/${site}/posts?${p}`, signal);
   },
@@ -1508,7 +1508,16 @@ function renderSiteList() {
     };
     lab.append(cb, ' ' + site); list.append(lab);
   }
-  d.append(list); return d;
+  d.append(list);
+  const th = el('label'), tcb = el('input'); tcb.type = 'checkbox'; tcb.checked = S.skThreshold;
+  tcb.onchange = () => { S.skThreshold = tcb.checked; store.set('skThreshold', S.skThreshold); markDirty(); };
+  th.append(tcb, ' Sankaku: show low-rated posts too');
+  d.append(th, el('p', 'hint', 'Lowers Sankaku\'s quality cut-off from 2 (what the site uses) to 0. Does not count towards your tag limit.'));
+  const bk = el('label'), bcb = el('input'); bcb.type = 'checkbox'; bcb.checked = S.skBooks;
+  bcb.onchange = () => { S.skBooks = bcb.checked; store.set('skBooks', S.skBooks); markDirty(); };
+  bk.append(bcb, ' Sankaku: hide comic/book pages everywhere');
+  d.append(bk, el('p', 'hint', 'Off: like the site, book pages are hidden only on big tags. On: always hidden (except pool: and fav: searches).'));
+  return d;
 }
 function renderCustomSites() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Custom sites'));

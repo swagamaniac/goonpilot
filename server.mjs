@@ -144,6 +144,9 @@ function logAccess(verdict, req, host, pathname) {
 const SERVER_LOG = path.join(ROOT, 'data', 'server.log');
 let logBuf = [];
 const logLine = (s) => { logBuf.push(`${new Date().toISOString().slice(11, 23)} ${s}`); };
+// Console lines (site requests etc.) go to server.log too, so they can be shared without copying the window.
+const conLog = console.log;
+console.log = (...a) => { conLog(...a); logLine(a.join(' ').trim()); };
 const flushLog = () => {
   if (!logBuf.length) return;
   const text = logBuf.join('\n') + '\n'; logBuf = [];

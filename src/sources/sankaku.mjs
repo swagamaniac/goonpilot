@@ -122,10 +122,11 @@ function normalizePost(p) {
 function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all' }) {
   const parts = [...include.map(cleanTag), ...exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-');
   const groups = [or, ...orGroups].map(g => g.map(cleanTag).filter(Boolean)).filter(g => g.length);
-  if (groups.filter(g => g.length > 1).length > 1) throw err('Sankaku supports only one OR group per search', 400);
   for (const g of groups) parts.push(...(g.length > 1 ? g.map(t => '~' + t) : g));
   if (sort === 'score') parts.push('order:quality');
+  else if (sort === 'popular') parts.push('order:popularity');
   else if (sort === 'random') parts.push('order:random');
+  else if (sort === 'updated') parts.push('order:change_desc');
   if (rating === 'safe') parts.push('rating:s');
   else if (rating === 'questionable') parts.push('rating:q');
   else if (rating === 'explicit') parts.push('rating:e');
@@ -150,18 +151,26 @@ export const sankaku = {
   async media(raw, request, env, fetchImpl = fetch) {
     const m = REF.exec(String(raw || ''));
     if (!m) return new Response('Bad media URL', { status: 400 });
+    console.log(`  [sankaku] media ${String(raw).slice(8, 16)} requested`);
     const [, md5, kind] = m;
     let res;
     for (let i = 0; i < 2; i++) {
       let hit = urls.get(md5);
-      if (!hit || hit.exp - 60e3 < Date.now()) { urls.delete(md5); await lookup(md5, env, fetchImpl); hit = urls.get(md5); }
+      if (!hit || hit.exp - 60e3 < Date.now()) {
+        console.log(`  [sankaku] ${md5.slice(0, 8)} ${kind}: ${hit ? `link expires in ${Math.round((hit.exp - Date.now()) / 1000)}s` : 'not cached'}, md5 lookup (${lookups.size} queued)`);
+        urls.delete(md5); const t0 = Date.now(); await lookup(md5, env, fetchImpl); hit = urls.get(md5);
+        console.log(`  [sankaku] ${md5.slice(0, 8)} lookup done in ${Date.now() - t0}ms${hit ? '' : ', not found'}`);
+      }
       if (!hit) return new Response('Post not found on Sankaku', { status: 404 });
       let u; try { u = new URL(hit[kind]); } catch { return new Response('Bad media URL', { status: 502 }); }
       if (u.protocol !== 'https:' || !u.hostname.endsWith('.sankakucomplex.com')) return new Response('Host not allowed', { status: 403 });
       if (ON_PAGES) return Response.redirect(u.href, 302);
       const h = { 'User-Agent': H['User-Agent'], Referer: H.Referer };
       const range = request.headers.get('range'); if (range) h.Range = range;
+      const t1 = Date.now();
       res = await fetchImpl(u, { headers: h, signal: request.signal });
+      if (Date.now() - t1 > 3000) console.log(`  [sankaku] ${md5.slice(0, 8)} ${kind}: CDN took ${Date.now() - t1}ms to answer (${res.status})`);
+      if (/expired\.png/.test(res.url || '')) console.log(`  [sankaku] ${md5.slice(0, 8)} ${kind}: CDN says link expired, retrying`);
       if (!/expired\.png/.test(res.url || '') && res.status !== 403) break;
       res.body?.cancel(); urls.delete(md5); res = null;
     }
@@ -182,17 +191,23 @@ export const sankaku = {
       if (page > 0 && !c[page]) return { posts: [], hasMore: false };
       if (page > start) await sleep(1000);
       console.log(`  [sankaku] page ${page}  tags: ${tags || '(none)'}`);
-      data = await call('/v2/posts/keyset', { limit: String(q.limit), tags, ...(c[page] ? { next: c[page] } : {}) }, env, fetchImpl);
+      // Same extra parameters the site's own search sends (default_threshold 2, hide_posts_in_books in-larger-tags); Settings can lower the threshold to 0 and hide book pages always. pool:/fav: searches skip the book filter.
+      data = await call('/v2/posts/keyset', { limit: String(q.limit), tags, default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tags) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] ? { next: c[page] } : {}) }, env, fetchImpl);
       c[page + 1] = data?.meta?.next || '';
     }
     const raw = Array.isArray(data?.data) ? data.data : [];
+    const life = raw[0]?.file_url ? Math.round((expiry(String(raw[0].file_url)) - Date.now()) / 1000) : null;
+    console.log(`  [sankaku] got ${raw.length} posts, ${raw.filter(p => !p?.file_url).length} without file${life !== null ? `, links valid ${life}s` : ''}`);
     raw.forEach(remember);
     let posts = raw.filter(p => p && p.id && p.file_url && /^[0-9a-f]{32}$/i.test(p.md5 || '')).map(normalizePost);
     const hidden = raw.length - posts.length;
-    if (q.minScore > 0) posts = posts.filter(p => p.score >= q.minScore);
+    console.log(`  [sankaku] kept ${posts.length}/${raw.length}${hidden ? ` (dropped: ${raw.filter(p => !p?.id).length} no id, ${raw.filter(p => !/^[0-9a-f]{32}$/i.test(p?.md5 || '')).length} bad md5, e.g. md5=${JSON.stringify(String(raw.find(p => !/^[0-9a-f]{32}$/i.test(p?.md5 || ''))?.md5 ?? 'none').slice(0, 40))})` : ''}`);
     if (q.shape === 'portrait') posts = posts.filter(p => p.w / p.h < 1.12);
     else if (q.shape === 'landscape') posts = posts.filter(p => p.w / p.h >= 1.12);
-    return { posts, hasMore: !!c[want + 1], hidden };
+    // Guard: stop after 3 pages in a row that leave nothing to show, so a broken filter can't page through the whole site.
+    c.empty = posts.length ? 0 : (c.empty || 0) + 1;
+    if (c.empty >= 3) console.log('  [sankaku] 3 empty pages in a row, stopping this search');
+    return { posts, hasMore: !!c[want + 1] && c.empty < 3, hidden };
   },
 
   // Endpoint taken from what the site's own search box calls; not confirmed against the live API.
