@@ -1361,6 +1361,23 @@ function renderSheet() {
     logins.append(el('p', 'hint', pages
       ? 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.'
       : 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login. e621 and e6ai images are loaded through your local server with your login.'));
+    const paste = el('textarea'); paste.rows = 3; paste.spellcheck = false; paste.autocomplete = 'off'; paste.placeholder = 'Paste a .dev.vars file here (KEY=value per line)';
+    const pickVars = el('input'); pickVars.type = 'file'; pickVars.hidden = true;
+    const importVars = async (text) => {
+      try {
+        const r = await fyJson('keys/import', { text }, undefined, '/api/');
+        paste.value = ''; S.status = await api.status();
+        toast(`Imported ${r.keys.length} key${r.keys.length === 1 ? '' : 's'}${r.skipped ? `, skipped ${r.skipped} line${r.skipped === 1 ? '' : 's'}` : ''}: ${r.keys.join(', ')}`);
+      } catch (err) { toast(err.message); }
+      renderSheet();
+    };
+    pickVars.onchange = async () => { const f = pickVars.files?.[0]; if (f) importVars(await f.text()); };
+    const fromFile = el('button', 'btn', 'Upload .dev.vars'); fromFile.onclick = () => pickVars.click();
+    const fromPaste = el('button', 'btn', 'Import pasted'); fromPaste.onclick = () => { if (paste.value.trim()) importVars(paste.value); };
+    const imp = el('div', 'inline'); imp.append(fromFile, fromPaste, pickVars);
+    logins.append(paste, imp, el('p', 'hint', pages
+      ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
+      : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
     body.append(logins, renderSiteList(), renderCustomSites(), renderVision());
     if (pages) body.append(renderBackup());
     body.append(renderForYouSettings());

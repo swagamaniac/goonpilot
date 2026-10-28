@@ -32,12 +32,18 @@ function loadVars() {
   return env;
 }
 const env = loadVars();
-function saveVars(vals) {
+// loadVars strips one quote at each end, so wrap a value that starts or ends with a quote or space.
+const quoteVar = (v) => /^[\s"']|[\s"']$/.test(v) ? `'${v}'` : v;
+function saveVars(vals, backup) {
   const file = path.join(ROOT, '.dev.vars');
   const lines = existsSync(file) ? readFileSync(file, 'utf8').trimEnd().split(/\r?\n/) : [];
+  if (backup && lines.length) {
+    const dir = path.join(ROOT, 'data', 'backups'); mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, `dev.vars-${new Date().toISOString().replace(/[:.]/g, '-')}`), lines.join('\n') + '\n');
+  }
   for (const [k, v] of Object.entries(vals)) {
     const i = lines.findIndex(l => new RegExp(`^\\s*${k}\\s*=`).test(l));
-    if (i >= 0) lines[i] = `${k}=${v}`; else lines.push(`${k}=${v}`);
+    if (i >= 0) lines[i] = `${k}=${quoteVar(v)}`; else lines.push(`${k}=${quoteVar(v)}`);
     env[k] = v;
   }
   writeFileSync(file, lines.join('\n') + '\n');

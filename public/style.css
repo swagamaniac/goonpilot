@@ -349,6 +349,7 @@ html, body, button, a { touch-action: manipulation; }
 
 .details { overflow-x: hidden; overscroll-behavior-x: none; min-width: 0; max-width: 100vw; touch-action: pan-y; }
 .details > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.fybox textarea { width: 100%; box-sizing: border-box; color: var(--fg); font: 13px var(--font-mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; resize: vertical; }
 .field input, .fybox select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; height: 36px; padding: 0 10px; box-sizing: border-box; }
 .inline { flex-wrap: wrap; }
 .fymore { display: contents; }

@@ -324,10 +324,27 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     const [b, err] = await readBody(request); if (err) return err;
     const allowed = new Set(Object.values(SOURCES).flatMap(s => s.envKeys)), vals = {};
     for (const [k, v] of Object.entries(b)) {
-      if (!allowed.has(k) || typeof v !== 'string' || v.length > 200 || /[\r\n#"']/.test(v)) return json({ error: 'Invalid value' }, 400);
+      if (!allowed.has(k) || typeof v !== 'string' || v.length > 200 || /[\r\n]/.test(v)) return json({ error: 'Invalid value' }, 400);
       vals[k] = v.trim();
     }
     ctx.saveVars(vals); return json({ ok: true });
+  }
+  // Paste or upload a whole .dev.vars: merges site keys, backs up the old file, answers with key names only.
+  if (url.pathname === '/api/keys/import' && request.method === 'POST') {
+    const bad = guardPrivate(request, url); if (bad) return bad;
+    if (!ctx.saveVars) return json({ error: 'Logins can only be changed on the computer running the server' }, 403);
+    const [b, err] = await readBody(request); if (err) return err;
+    if (typeof b.text !== 'string') return json({ error: 'Nothing to import' }, 400);
+    const vals = {}; let skipped = 0;
+    for (const line of b.text.split(/\r?\n/)) {
+      if (!line.trim() || line.trim().startsWith('#')) continue;
+      const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+      const v = m && m[2].replace(/^["']|["']$/g, '');
+      if (!m || !/^(RULE34|E621|E6AI|GELBOORU|DANBOORU|SANKAKU|CUSTOM)_/.test(m[1]) || !v || v.length > 500) { skipped++; continue; }
+      vals[m[1]] = v;
+    }
+    if (!Object.keys(vals).length) return json({ error: 'No site keys found' }, 400);
+    ctx.saveVars(vals, true); return json({ ok: true, keys: Object.keys(vals), skipped });
   }
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
