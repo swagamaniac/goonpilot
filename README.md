@@ -8,6 +8,7 @@ A personal booru viewer that runs on your own computer. No accounts, no cloud, a
 Everything beyond the quick start is in the **[wiki](https://github.com/swagamaniac/goonpilot/wiki)**:
 - [Setup](https://github.com/swagamaniac/goonpilot/wiki/Setup): install, start, optional logins
 - [Phone](https://github.com/swagamaniac/goonpilot/wiki/Phone): use it from a phone or tablet
+- [Search and sorting](https://github.com/swagamaniac/goonpilot/wiki/Search-and-sorting): search syntax, OR groups, sort options, tag limits
 - [Image analysis](https://github.com/swagamaniac/goonpilot/wiki/Image-analysis): optional local AI tagging
 - [Favorites and data](https://github.com/swagamaniac/goonpilot/wiki/Favorites-and-data): downloads, new-post checks, where your data lives
 - [Troubleshooting](https://github.com/swagamaniac/goonpilot/wiki/Troubleshooting)

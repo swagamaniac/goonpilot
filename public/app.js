@@ -184,10 +184,13 @@ function setImg(img, u) {
 const shapeNow = () => (TOUCH.matches && !S.fyNoShape ? S.orient : 'any');
 const api = {
   posts(site, q, signal) {
-    const p = new URLSearchParams({
+    // Only non-default params are sent; the server treats missing ones as the defaults. pr (screen ratio) is only used by "Fits my screen".
+    const all = {
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: String(Math.round(innerWidth / innerHeight * 1000) / 1000)
-    });
+      min: String(q.minScore), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
+    };
+    const skip = { sort: 'id', rating: 'all', min: '0', page: '0', shape: 'any' };
+    const p = new URLSearchParams(Object.entries(all).filter(([k, v]) => v && v !== skip[k]));
     return getJson(`/api/${site}/posts?${p}`, signal);
   },
   suggest(site, text, signal) { return getJson(`/api/${site}/suggest?q=${encodeURIComponent(text)}`, signal); },
@@ -1303,8 +1306,22 @@ function renderSheet() {
     renderArtists(body);
   } else if (tab === 'super') {
     renderSupertags(body);
+  } else if (tab === 'votes') {
+    const pr = S.fyState?.prefs;
+    if (!pr) { body.append(el('p', 'hint', 'Loading…')); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'votes' && S.fyState?.prefs) renderSheet(); }); return; }
+    const W = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1, ...pr.weights };
+    const field = (k, label, opts) => segField(label, opts, W[k], v => v + '×', async v => { if (await setPrefs({ weights: { [k]: v } })) renderSheet(); });
+    body.append(group('Vote weight',
+      field('like', '👍 Like', [0.5, 1, 1.5, 2, 3]),
+      field('superLike', '⭐ Super like', [1, 2, 3, 4, 5]),
+      field('dislike', '👎 Dislike', [0.5, 1, 1.5, 2, 3]),
+      field('superDislike', '⛔ Super dislike', [1, 2, 3, 4, 5]),
+      field('dive', '🧭 Deep Dive multiplier', [0, 0.25, 0.5, 1, 1.5, 2]),
+      el('p', 'hint', 'How much each vote counts for For you. The Deep Dive multiplier scales any vote given inside a Deep Dive (1× = same as normal). Changes apply to past votes too. Set per profile.')
+    ));
   } else {
     const pages = !!S.status?.pages;
+    queueMicrotask(() => foldGroups(body));
     body.append(group('Feed',
       segField('Posts per request (per site)', [10, 20, 50, 100], S.pageSize, String, v => { S.pageSize = v; store.set('pageSize', v); markDirty(); }),
       el('p', 'hint', 'Applies from your next search.'),
@@ -1344,7 +1361,7 @@ function renderSheet() {
     logins.append(el('p', 'hint', pages
       ? 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.'
       : 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login. e621 and e6ai images are loaded through your local server with your login.'));
-    body.append(logins, renderSiteList(), renderCustomSites());
+    body.append(logins, renderSiteList(), renderCustomSites(), renderVision());
     if (pages) body.append(renderBackup());
     body.append(renderForYouSettings());
     if (pages) return;
@@ -1363,6 +1380,16 @@ function renderSheet() {
       rs.textContent = 'Server did not come back. Check the PC.';
     };
     body.append(group('Server', rs));
+  }
+}
+// Settings sections fold when their heading is tapped; which ones are folded is remembered on this device only.
+const folded = new Set(store.get('folded', []));
+function foldGroups(body) {
+  for (const h of body.querySelectorAll(':scope > .fybox > h3')) {
+    const box = h.parentElement, k = h.textContent, set = c => { box.classList.toggle('closed', c); h.setAttribute('aria-expanded', !c); };
+    box.classList.add('fold'); h.tabIndex = 0; h.setAttribute('role', 'button'); set(folded.has(k));
+    h.onclick = () => { const c = !box.classList.contains('closed'); set(c); folded[c ? 'add' : 'delete'](k); store.set('folded', [...folded]); };
+    h.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); h.click(); } };
   }
 }
 const group = (title, ...kids) => { const d = el('div', 'fybox'); d.append(el('h3', null, title), ...kids); return d; };
@@ -1494,6 +1521,21 @@ function renderProfiles() {
   }
   return d;
 }
+function renderVision() {
+  const d = el('div', 'fybox'); d.append(el('h3', null, 'Image analysis'));
+  const info = el('p', 'hint', 'checking...'); d.append(info);
+  const H = { 'x-goonpilot': '1' }, call = (p) => fetch(p, { headers: H }).then(r => r.json());
+  const box = (label, on, path) => { const lab = el('label'), cb = el('input'); cb.type = 'checkbox'; cb.checked = on; cb.onchange = () => call(path + (cb.checked ? 1 : 0)).then(show).catch(() => toast('Could not change it')); lab.append(cb, ' ' + label); return lab; };
+  const show = (st) => {
+    d.querySelectorAll('label').forEach(x => x.remove());
+    if (!st.packages || !st.model) { info.textContent = 'Not set up. Run maintenance\\setup-vision.bat once.'; return; }
+    info.textContent = (st.ready ? 'Ready. ' : 'Not ready: ' + (st.error || 'loading') + '. ') + st.analysed + ' pictures analysed.';
+    d.append(box('On (pictures you open in For you)', st.enabled, '/api/vision/toggle?on='));
+    if (st.local) import('./local.js').then(m => m.visionExtras?.(d, st, box)).catch(() => {});
+  };
+  call('/api/vision/status').then(show).catch(() => { info.textContent = 'Server not reachable.'; });
+  return d;
+}
 function renderSiteList() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Sites'));
   d.append(el('p', 'hint', 'Unticked sites drop out of the site picker. The +N button at the end of the picker shows them again.'));
@@ -1595,7 +1637,7 @@ function renderForYouSettings() {
     try { const r = await fyJson('enabled', { enabled: v }); S.fyOn = r.enabled; await loadFyState(); applyFyUi(); renderSheet(); }
     catch (err) { toast(err.message); }
   }));
-  box.append(el('p', 'hint', 'Learns from posts you like (8), dislike (2), super like (9, counts 3x) or super dislike (3) on the numpad (or the number row). Everything stays in a file on this computer (data/foryou.json). Nothing is sent to any site, and it never affects normal search. Off: the button disappears and nothing is learned.'));
+  box.append(el('p', 'hint', 'Learns from posts you like (8), dislike (2), super like (9, counts 3x by default; see the Votes tab) or super dislike (3) on the numpad (or the number row). Everything stays in a file on this computer (data/foryou.json). Nothing is sent to any site, and it never affects normal search. Off: the button disappears and nothing is learned.'));
   box.append(renderHotkeys());
   box.append(
     segField('After voting, go to next post', [true, false], S.autoNext, v => v ? 'On' : 'Off', v => { S.autoNext = v; store.set('autoNext', v); }),
@@ -1790,7 +1832,7 @@ const viewer = {
     const at = S.vIndex, rank = i => i === at ? -1 : i > at ? i - at : 1000 + (at - i);
     const order = this.slides.map((_, i) => i).sort((x, y) => rank(x) - rank(y));
     for (const i of order) {
-      const s = this.slides[i], near = Math.abs(i - S.vIndex) <= (S.posts[i]?.site === 'paheal' ? 1 : WINDOW);
+      const s = this.slides[i], site = S.posts[i]?.site, near = Math.abs(i - S.vIndex) <= (site === 'paheal' ? 1 : site === 'sankaku' && i > S.vIndex ? 6 : WINDOW);
       if (near && !s.firstChild) { s.append(this.media(S.posts[i])); this.backdrop(s, S.posts[i]); }
       else if (!near && s.firstChild) { s.querySelectorAll('video').forEach(unloadVideo); s.replaceChildren(); }
       const v = s.querySelector('video');

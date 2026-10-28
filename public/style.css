@@ -217,6 +217,10 @@ body.fy-on .fy-only { display: inline-flex; }
 .fybox { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 0; display: grid; gap: 8px; align-content: start; min-width: 0; }
 .fybox h3 { margin: 0; font-size: 14px; }
 .fybox .fybox { padding: 10px; }
+.fybox.fold > h3 { cursor: pointer; user-select: none; }
+.fybox.fold > h3::after { content: ' ▾'; color: var(--muted); }
+.fybox.closed > h3::after { content: ' ▸'; }
+.fybox.closed > :not(h3) { display: none; }
 .fybox .item .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .fytags { display: flex; flex-wrap: wrap; gap: 4px; }
 .fytags span { background: var(--surface-2); border-radius: 8px; padding: 2px 8px; font-size: 12px; }
@@ -305,7 +309,7 @@ header.bar.bar-hidden { transform: translateY(-110%); }
 #viewerRoot .hud.hud-hidden { transform: translateY(-120%); opacity: 0; pointer-events: none; }
 
 @media (hover: none) and (pointer: coarse) {
-  #vAuto, #vSuper { display: none !important; }
+  #vAuto { display: none !important; }
   #viewerRoot .hud { gap: 4px !important; }
   #viewerRoot .hud .iconbtn { min-width: 0 !important; padding-left: 8px !important; padding-right: 8px !important; }
 }
@@ -323,7 +327,7 @@ header.bar.bar-hidden { transform: translateY(-110%); }
   #vBar { display: inline-flex; }
 }
 @media (hover: none) and (pointer: coarse) and (orientation: portrait) {
-  body.tbar-vis #vLike, body.tbar-vis #vDislike, body.tbar-vis #vInfo { display: none !important; }
+  body.tbar-vis #vLike, body.tbar-vis #vDislike, body.tbar-vis #vSuper, body.tbar-vis #vInfo { display: none !important; }
 }
 #orient { display: none; }
 @media (hover: none) and (pointer: coarse) { #orient { display: inline-flex; } }

@@ -1,3 +1,4 @@
+import { AI_TAG } from './sources/e621.mjs';
 
 const DAY = 86400000;
 const HALF_LIFE = Infinity;
@@ -27,7 +28,8 @@ function makeIgnore(list) {
 }
 const PAHEAL_KEEP_IGNORED = new Set(['animated', 'video', 'tagme', 'gif', 'mp4', 'webm']);
 const SCORE_RULE = /^score:(>=?)(\d{1,6})$/;
-export const DEFAULT_PREFS = { mode: 'balanced', media: 'all', blacklist: [], whitelist: [], ignoreCharacters: false, ignoreCopyright: false, ignoreArtists: false, ignoreSpecies: false, minScore: {}, boost: {}, boostType: {}, genericV1: true, ignored: DEFAULT_IGNORED };
+export const DEFAULT_WEIGHTS = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1 };
+export const DEFAULT_PREFS = { mode: 'balanced', media: 'all', blacklist: [], whitelist: [], ignoreCharacters: false, ignoreCopyright: false, ignoreArtists: false, ignoreSpecies: false, minScore: {}, boost: {}, boostType: {}, weights: { ...DEFAULT_WEIGHTS }, genericV1: true, ignored: DEFAULT_IGNORED };
 const MODES = { balanced: { cut: 0.6, every: 4 }, comfort: { cut: 0.85, every: 8 }, explore: { cut: 0.4, every: 2 } };
 export const emptyData = () => ({ v: 1, prefs: { ...DEFAULT_PREFS }, enabled: true, votes: {}, seen: {}, seenMd5: {}, tagSeen: {}, nSeen: 0, bandit: {} });
 
@@ -130,7 +132,7 @@ const LR_MIN = 40, LR_MAX = 0.8;
 const LOOK_W = 0.08;
 export function createForYou({ load, save, backup = () => {}, enabled, setEnabled, now = Date.now, random = Math.random, scope = 'normal', shared = null, vision = null, md5Of = null }) {
   const aiTags = (md5, have) => { const t = vision && md5 && vision.enabled() ? vision.tags(md5) : null; return t ? t.filter(n => !have.has(n)) : []; }
-  const voteTags = (v) => { if (!vision || !md5Of) return v.tags; const md5 = md5Of(v.site, v.id), have = new Set(v.tags.map(t => t[0])), extra = aiTags(md5, have); return extra.length ? [...v.tags, ...extra.map(n => [n, 'ai'])] : v.tags; };
+  const voteTags = (v) => { const base = v.site === 'e6ai' ? v.tags.filter(t => !AI_TAG.test(t[0])) : v.tags; if (!vision || !md5Of) return base; const md5 = md5Of(v.site, v.id), have = new Set(v.tags.map(t => t[0])), extra = aiTags(md5, have); return extra.length ? [...base, ...extra.map(n => [n, 'ai'])] : base; };
   const lookOf = (md5) => { const l = vision && md5 && vision.enabled() ? vision.look(md5) : null; return l ? vision.z(l) : null; };
   let data = null;
   let ignCache = null;
@@ -178,6 +180,14 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
     m.set('@r:' + post.rating, 1); m.set('@m:' + mediaOf(post.type), 1);
     return m;
   };
+  // Signed vote strength from prefs.weights, applied when read so a change also covers past votes.
+  // Older Deep Dive votes were stored with pw 0.1 and no flag; they read as dive votes at full session weight.
+  const voteW = (v, W) => {
+    const oldDive = v.dive === undefined && v.pw === 0.1, a = Math.abs(v.vote);
+    const base = v.vote > 0 ? (a === 2 ? W.superLike : W.like) : (a === 2 ? W.superDislike : W.dislike);
+    return Math.sign(v.vote) * base * (oldDive ? 1 : v.pw ?? 1) * (oldDive || v.dive ? W.dive : 1);
+  };
+  const weights = () => ({ ...DEFAULT_WEIGHTS, ...get().prefs.weights });
   function trainLR(votes, forPaheal, key) {
     if (lrMemo && lrMemo.key === key) return lrMemo.model;
     let model = null;
@@ -186,7 +196,8 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
     if (use.length >= LR_MIN && pos >= 8 && neg >= 8) {
       const tEnd = Math.max(...use.map(v => v.t));
       const docs = use.map(v => lrFeat(v, voteTags(v).map(([n, ty]) => ({ name: (v.site === 'paheal' && PAHEAL_COMMON[n]) || n, type: ty }))));
-      const ys = use.map(v => v.vote > 0 ? 1 : 0), ws = use.map(v => (Math.abs(v.vote) === 2 ? 2 : 1) * (v.pw ?? 1) * 1);
+      const VW = weights();
+      const ys = use.map(v => v.vote > 0 ? 1 : 0), ws = use.map(v => Math.abs(voteW(v, VW)) * (Math.abs(v.vote) === 2 ? 2 / 3 : 1));
       const idx = new Map(); for (const d of docs) for (const k of d.keys()) if (!idx.has(k)) idx.set(k, idx.size);
       const W = new Float64Array(idx.size), G = new Float64Array(idx.size).fill(1e-6); let b = 0, gb = 1e-6;
       const order = docs.map((_, i) => i); let seed = 1; const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -211,14 +222,14 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
   }
 
   function profile(forPaheal = false) {
-    const d = get(), t = now(), tags = new Map(), ratings = {}, media = {};
+    const d = get(), t = now(), tags = new Map(), ratings = {}, media = {}, W = weights();
     let votes = Object.values(d.votes);
     if (scope === 'paheal-own') votes = votes.filter(v => v.site === 'paheal');
     else if (scope === 'paheal-all' && shared) votes = [...votes, ...shared.votes()];
     forPaheal = forPaheal || scope !== 'normal';
     for (const v of votes) {
       if (!forPaheal && v.site === 'paheal') continue;
-      const w = Math.pow(0.5, (t - v.t) / HALF_LIFE) * (v.pw ?? 1) * Math.sign(v.vote) * (Math.abs(v.vote) === 2 ? 3 : 1);
+      const w = Math.pow(0.5, (t - v.t) / HALF_LIFE) * voteW(v, W);
       for (const [name0, type] of voteTags(v)) {
         const name = (v.site === 'paheal' && PAHEAL_COMMON[name0]) || name0;
         if (forPaheal && v.site !== 'paheal' && siteTagSets.has('paheal') && !siteTagSets.get('paheal').has(name) && !siteTagSets.get('paheal').has(PAHEAL_SITE[name])) continue;
@@ -241,7 +252,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       for (const v of votes) {
         if (!forPaheal && v.site === 'paheal') continue;
         const z = lookOf(md5Of(v.site, v.id)); if (!z) continue;
-        const w = Math.pow(0.5, (t - v.t) / HALF_LIFE) * (v.pw ?? 1) * Math.sign(v.vote) * (Math.abs(v.vote) === 2 ? 3 : 1);
+        const w = Math.pow(0.5, (t - v.t) / HALF_LIFE) * voteW(v, W);
         for (let k = 0; k < 32; k++) dir[k] += w * z[k]; wsum += Math.abs(w); nv++;
       }
       if (nv >= 15 && wsum > 0) look = dir.map(x => x / wsum);
@@ -252,7 +263,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       if (!e) { e = { pos: 0, neg: 0, type: (d.prefs.boostType || {})[name] || 'boost', sites: new Set(['rule34', 'e621', 'e6ai', 'paheal']), aff: 0 }; tags.set(name, e); }
       e.aff = clamp(e.aff + lvl * 0.35, -1, 1); e.boost = lvl;
     }
-    const key = [scope, forPaheal, votes.length, votes.reduce((m, v) => v.t > m ? v.t : m, 0), d.prefs.ignored, d.prefs.ignoreCharacters, d.prefs.ignoreCopyright, d.prefs.ignoreArtists, d.prefs.ignoreSpecies, vision && vision.enabled() ? vision.count() : 0].join('|');
+    const key = [scope, forPaheal, votes.length, votes.reduce((m, v) => v.t > m ? v.t : m, 0), d.prefs.ignored, d.prefs.ignoreCharacters, d.prefs.ignoreCopyright, d.prefs.ignoreArtists, d.prefs.ignoreSpecies, JSON.stringify(W), vision && vision.enabled() ? vision.count() : 0].join('|');
     let lr = null; try { lr = trainLR(votes, forPaheal, key); } catch (e) { lr = null; }
     return { tags, ratings, media, look, lr };
   }
@@ -404,6 +415,11 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
         p.minScore = { ...(p.minScore || {}) };
         for (const s of ['rule34', 'e621', 'e6ai']) if (Object.hasOwn(b.minScore, s)) { const n = Math.floor(Number(b.minScore[s])); if (n > 0) p.minScore[s] = Math.min(n, 1e6); else delete p.minScore[s]; }
       }
+      if (b.weights && typeof b.weights === 'object') {
+        const w = { ...DEFAULT_WEIGHTS, ...p.weights };
+        for (const k of Object.keys(DEFAULT_WEIGHTS)) if (Number.isFinite(b.weights[k])) w[k] = Math.min(10, Math.max(0, Math.round(b.weights[k] * 100) / 100));
+        p.weights = w;
+      }
       if (b.resetIgnored === true) p.ignored = [...DEFAULT_IGNORED];
       if (Array.isArray(b.blacklist)) p.blacklist = [...new Set(b.blacklist.filter(x => typeof x === 'string').map(x => x.trim().toLowerCase().replace(/\s+/g, '_')).filter(x => x && x.length <= 200 && !/:/.test(x)))].slice(0, 200);
       persist(); return p;
@@ -444,9 +460,9 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       const cp = cleanPost(post); if (!cp) throw Object.assign(new Error('Bad post data'), { status: 400 });
       if (Object.keys(d.votes).length >= MAX_VOTES && !d.votes[k]) throw Object.assign(new Error('Too many votes stored'), { status: 400 });
       markSeen({ id, ...cp, md5: /^[0-9a-f]{32}$/.test(md5 || '') ? md5 : '' }, site);
-      const pw = dive && inDive === true ? 0.1 : session.record(k, cp, Math.sign(vote) * (Math.abs(vote) === 2 ? 3 : 1));
+      const pw = session.record(k, cp, Math.sign(vote) * (Math.abs(vote) === 2 ? 3 : 1)), isDive = !!dive && inDive === true;
       const s = STRATS.includes(strat) || strat === 'popular' ? strat : null;
-      d.votes[k] = { site, id, vote, t: now(), pw, rating: cp.rating, type: cp.type, strat: s, tags: cp.tags.filter(t => t.type !== 'meta').map(t => [t.name, t.type]) };
+      d.votes[k] = { site, id, vote, t: now(), pw, rating: cp.rating, type: cp.type, strat: s, ...(isDive ? { dive: true } : {}), tags: cp.tags.filter(t => t.type !== 'meta').map(t => [t.name, t.type]) };
       if (s) { const b = d.bandit[s] || (d.bandit[s] = { w: 0, l: 0 }); vote > 0 ? b.w++ : b.l++; if (b.w + b.l > 200) { b.w /= 2; b.l /= 2; } }
       prune(); persist();
       return vote;
