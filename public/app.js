@@ -1379,7 +1379,7 @@ function renderSheet() {
       ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
     body.append(logins, renderSiteList(), renderCustomSites(), renderVision());
-    if (pages) body.append(renderBackup());
+    body.append(pages ? renderBackup() : renderExport());
     body.append(renderForYouSettings());
     if (pages) return;
     const rs = el('button', 'btn ghost', '↻ Restart server (start-phone.bat)');
@@ -1428,6 +1428,16 @@ function renderBackup() {
   };
   const row = el('div', 'inline'); row.append(save, load, pick); box.append(row);
   box.append(renderDrive());
+  return box;
+}
+
+// Local server: one-way export of data/ into a file the Pages version can restore. Nothing here leaves this device.
+function renderExport() {
+  const box = group('Backup & sync');
+  box.append(el('p', 'hint', 'Save everything (profiles, likes, learning, saved searches, supertags, history, settings and custom sites) to a file, then open the browser version and use Restore from file there. Logins are not included.'));
+  const save = el('button', 'btn', 'Save file for the browser version');
+  save.onclick = () => { const x = document.createElement('a'); x.href = 'api/pages/backup'; x.download = ''; document.body.append(x); x.click(); x.remove(); toast('Preparing file…'); };
+  box.append(save);
   return box;
 }
 

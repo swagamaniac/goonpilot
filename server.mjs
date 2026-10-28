@@ -94,6 +94,17 @@ const missStore = fileStore(path.join(ROOT, 'data'), 'tagmiss');
 tagMissing.load(missStore.load());
 const saveMissing = () => { try { missStore.save(tagMissing.dump()); missStore.flush(); } catch {} };
 setInterval(saveMissing, 60 * 1000).unref();
+
+// Download in the Pages version's backup format, so "Restore from file" there picks up everything from here.
+// Only reads data/: profiles, likes and learning, post cache, history/saved/supertags/settings (artists) and custom sites. Logins stay out.
+function pagesExport() {
+  profiles.flushAll(); postStore.flush(); artistStore.flush();
+  const read = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return undefined; } };
+  const data = {}, meta = read(dataFile('profiles'));
+  for (const n of ['profiles', 'posts', 'artists', ...(meta?.list || []).map(p => p.id === 'default' ? 'foryou' : 'foryou-' + p.id)]) { const v = read(dataFile(n)); if (v !== undefined) data[n] = v; }
+  const b = read(BOORUS); if (b !== undefined) data.boorus = b;
+  return JSON.stringify({ goonpilot: 1, at: new Date().toISOString(), data });
+}
 process.on('exit', saveMissing);
 ensurePahealTags({ file: path.join(ROOT, 'data', 'paheal-tags.json'), onLoad: (names, counts) => siteTags.set('paheal', names, counts) });
 
@@ -196,6 +207,7 @@ const server = http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `${viaTailscale ? 'https' : 'http'}://${req.headers.host}`);
     if (url.pathname.startsWith('/api/')) {
+      if (url.pathname === '/api/pages/backup' && req.method === 'GET') return send(res, 200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="goonpilot-backup-${new Date().toISOString().slice(0, 10)}.json"`, 'Cache-Control': 'no-store' }, pagesExport());
       const fwd = { accept: req.headers.accept || '*/*' };
       if (req.headers.range) fwd.range = req.headers.range;
       const ac = new AbortController();
