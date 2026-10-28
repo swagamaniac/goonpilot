@@ -56,6 +56,11 @@ const visionImport = () => {
   for (const [k, t] of Object.entries(src)) { const md5 = posts.get(k)?.md5; if (md5 && Array.isArray(t)) byMd5[md5] = t; }
   const n = vision.importTags(byMd5); renameSync(f, f + '.done'); return n;
 };
+const visionBackfill = async () => {
+  if (!(await vision.status()).ready) return { queued: 0, error: 'vision not ready' };
+  const list = library.files().map(x => ({ md5: posts.get(x.key)?.md5 || (x.urls.join(' ').match(/[0-9a-f]{32}/i) || [])[0], file: x.file }));
+  return { files: list.length, queued: vision.queueFiles(list) };
+};
 const visionVotes = () => {
   const out = { liked: 0, disliked: 0, superLiked: 0, superDisliked: 0, analysedNotVoted: 0 }, voted = new Set();
   try {
@@ -199,7 +204,7 @@ const server = http.createServer(async (req, res) => {
       for (const h of ['origin', 'x-goonpilot', 'sec-fetch-site']) if (req.headers[h]) fwd[h] = req.headers[h];
       const request = new Request(url, { method: req.method, headers: fwd, body, signal: ac.signal });
       const t0 = Date.now(), tag = url.pathname.replace(/^\/api\//, '').slice(0, 60) + (/media$/.test(url.pathname) ? ' ' + (() => { try { return new URL(url.searchParams.get('u')).host; } catch { return ''; } })() : '');
-      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, saveBoorus: local ? saveBoorus : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(() => process.exit(75), 400) : null });
+      const response = await handleApi(request, env, timedFetch, { vision, visionImport, visionBackfill, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, saveBoorus: local ? saveBoorus : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(async () => { await vision.close(); process.exit(75); }, 400) : null });
       res.writeHead(response.status, { ...SECURITY_HEADERS, ...Object.fromEntries(response.headers) });
       const ttfb = Date.now() - t0; let bytes = 0;
       res.on('close', () => logLine(`api     ${response.status} ttfb=${ttfb}ms total=${Date.now() - t0}ms ${(bytes / 1024) | 0}KB ${req.method} ${tag}${res.writableFinished ? '' : ' ABORTED'}`));

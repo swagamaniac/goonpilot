@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 
 const REV = '627aef95638667ddcaa3ac8ae625e88ea5b02f51';
 export const MODEL = {
@@ -51,7 +52,10 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
   const keepRecent = (md5, buf) => { recent.set(md5, buf); recentBytes += buf.length; while (recent.size > 10 || recentBytes > 80e6) { const [k, b] = recent.entries().next().value; recent.delete(k); recentBytes -= b.length; } };
   const queue = [], queued = new Set(); let busy = false, done = 0, failed = 0, last = '';
   let setup = { state: 'idle', pct: 0, error: '' };
-  let statsMemo = null, inForYou = null;
+  let statsMemo = null, inForYou = null, worker = null;
+  // Optional local override (data/vision-local.json, never in the repo): { "allViews": true } also analyses full images opened outside For you.
+  const localFile = path.join(dir, 'vision-local.json');
+  let allViews = (() => { try { return JSON.parse(readFileSync(localFile, 'utf8')).allViews === true; } catch { return false; } })();
 
   const get = () => {
     if (data) return data;
@@ -74,7 +78,13 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     if (session) return session;
     if (!(await loadLibs()) || !modelOk()) return null;
     try {
-      session = await libs.ort.InferenceSession.create(path.join(modelDir, 'model.onnx'), { intraOpNumThreads: 1, interOpNumThreads: 1 });
+      const w = new Worker(new URL('./vision-worker.mjs', import.meta.url), { workerData: { model: path.join(modelDir, 'model.onnx') } });
+      await new Promise((ok, bad) => { w.once('message', ok); w.once('error', bad); });
+      const waits = new Map(); let seq = 0;
+      w.on('message', (m) => { const r = waits.get(m.id); if (!r) return; waits.delete(m.id); if (m.error) r.bad(new Error(m.error)); else r.ok(m.p); });
+      w.on('error', (e) => { for (const r of waits.values()) r.bad(e); waits.clear(); session = null; sessErr = e.message; });
+      w.unref(); worker = w;
+      session = { run: (input) => new Promise((ok, bad) => { const id = ++seq; waits.set(id, { ok, bad }); w.postMessage({ id, input }, [input.buffer]); }) };
       const rows = readFileSync(path.join(modelDir, 'selected_tags.csv'), 'utf8').trim().split('\n').slice(1);
       labels = rows.map(l => { const m = /^(\d+),("(?:[^"]|"")*"|[^,]*),(\d+),/.exec(l); return m ? { name: m[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/ /g, '_'), cat: Number(m[3]) } : { name: '', cat: -1 }; });
     } catch (e) { sessErr = e.message; session = null; }
@@ -82,7 +92,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
   }
 
   async function analyse(buf) {
-    const { ort, sharp } = libs;
+    const { sharp } = libs;
     const base = () => sharp(buf, { failOn: 'none', limitInputPixels: 1e8 }).flatten({ background: '#ffffff' }).removeAlpha();
     const [big, small, gray] = await Promise.all([
       base().resize(448, 448, { fit: 'contain', background: '#ffffff' }).raw().toBuffer(),
@@ -91,8 +101,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     ]);
     const input = new Float32Array(448 * 448 * 3);
     for (let i = 0; i < 448 * 448; i++) { input[i * 3] = big[i * 3 + 2]; input[i * 3 + 1] = big[i * 3 + 1]; input[i * 3 + 2] = big[i * 3]; }
-    const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 448, 448, 3]) });
-    const p = out[session.outputNames[0]].data, hits = [];
+    const p = await session.run(input), hits = [];
     labels.forEach((l, i) => { if ((l.cat === 0 && p[i] > GEN_T) || (l.cat === 4 && p[i] > CHAR_T)) hits.push([l.name, p[i]]); });
     hits.sort((a, b) => b[1] - a[1]);
     return { t: hits.slice(0, MAX_TAGS).map(h => h[0]), look: lookFeatures(small), h: dHash(gray), at: Date.now() };
@@ -105,7 +114,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
         const job = queue.shift(); queued.delete(job.md5);
         try {
           if (!(await ensureSession())) { queue.length = 0; queued.clear(); break; }
-          const t0 = Date.now(), r = await analyse(job.buf);
+          const t0 = Date.now(), r = await analyse(job.buf || readFileSync(job.file));
           const items = get().items; if (Object.keys(items).length < MAX_ITEMS) { items[job.md5] = r; touch(); }
           done++; last = `${job.md5.slice(0, 8)} ${r.t.length} tags ${Date.now() - t0}ms`;
           log('vision', last);
@@ -123,6 +132,16 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
       if (buf) { recent.delete(md5); recentBytes -= buf.length; queued.add(md5); queue.push({ md5, buf }); pump(); return; }
       wanted.add(md5); if (wanted.size > 100) wanted.delete(wanted.values().next().value);
     },
+    // Backfill from files already on disk (offline library): no network. Returns how many were queued.
+    queueFiles(list) {
+      if (!session || !api.enabled()) return 0; let n = 0;
+      for (const { md5: m, file } of list) { const md5 = String(m || '').toLowerCase(); if (!/^[0-9a-f]{32}$/.test(md5) || get().items[md5] || queued.has(md5) || !/.(jpe?g|png|gif|webp)$/i.test(file)) continue; queued.add(md5); queue.push({ md5, file }); n++; }
+      if (n) pump(); return n;
+    },
+    // Stop the model thread before the process exits (exiting while it loads can crash node).
+    close: () => worker ? worker.terminate().catch(() => {}) : Promise.resolve(),
+    hasLocal: () => existsSync(localFile),
+    setAllViews(v) { if (!existsSync(localFile)) return; allViews = !!v; writeFileSync(localFile, JSON.stringify({ allViews })); },
     enabled: () => get().enabled !== false,
     setEnabled(v) { get().enabled = !!v; touch(); },
     ready: () => !!(session && api.enabled()),
@@ -147,11 +166,11 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
 
     async status() {
       await loadLibs(); if (!session && libs && modelOk()) await ensureSession();
-      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, done, failed, last };
+      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, ...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
     },
     tap(res, rawUrl) {
       try {
-        if (!session || !api.enabled() || inForYou === false || !res || res.status !== 200 || !res.body) return res;
+        if (!session || !api.enabled() || (inForYou === false && !allViews) || !res || res.status !== 200 || !res.body) return res;
         if (!/^image\//i.test(res.headers.get('content-type') || '')) return res;
         const u = String(rawUrl || ''); if (/\/(preview|thumbnails?)\/|thumbnail_/i.test(u)) return res;
         const m = /([0-9a-f]{32})\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.exec(u); if (!m) return res;
@@ -161,7 +180,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
         const stream = new ReadableStream({
           async pull(c) {
             const { done: d, value } = await reader.read();
-            if (d) { c.close(); if (!over && chunks.length) { const buf = Buffer.concat(chunks); if (wanted.delete(md5)) { queued.add(md5); queue.push({ md5, buf }); pump(); } else keepRecent(md5, buf); } chunks = []; return; }
+            if (d) { c.close(); if (!over && chunks.length) { const buf = Buffer.concat(chunks); if (wanted.delete(md5) || inForYou === false) { queued.add(md5); queue.push({ md5, buf }); pump(); } else keepRecent(md5, buf); } chunks = []; return; }
             if (!over) { total += value.length; if (total > MAX_IMG) { over = true; chunks = []; } else chunks.push(value); }
             c.enqueue(value);
           },

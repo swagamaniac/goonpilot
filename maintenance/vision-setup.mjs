@@ -6,6 +6,12 @@ let st;
 try { st = await call('/api/vision/status'); } catch { say('The server is not running. Start it (start-phone.bat or start.bat), then run this again.'); process.exit(1); }
 
 const arg = process.argv[2];
+if (st.status === 200 && arg === 'backfill') {
+  const r = await call('/api/vision/backfill', 'POST'); if (r.json?.error) { say('Backfill failed: ' + r.json.error); process.exit(1); }
+  say(`Tagging ${r.json.queued} of ${r.json.files} pictures from your offline library (local files only, nothing is downloaded).`);
+  for (;;) { await sleep(5000); const s2 = (await call('/api/vision/status')).json; process.stdout.write(`\r${s2.queued} left, ${s2.analysed} analysed, ${s2.failed} failed   `); if (!s2.queued) break; }
+  say('\nDone.'); process.exit(0);
+}
 if (st.status === 200 && (arg === 'on' || arg === 'off')) { st = await call('/api/vision/toggle?on=' + (arg === 'on' ? 1 : 0)); say('Image analysis is now ' + (st.json.enabled ? 'ON' : 'OFF')); process.exit(0); }
 
 

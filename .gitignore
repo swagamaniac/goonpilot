@@ -1,3 +1,4 @@
 .dev.vars
 data/
 node_modules/
+public/local.js

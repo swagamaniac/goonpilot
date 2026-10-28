@@ -287,9 +287,18 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     const bad = visionGuard(); if (bad) return bad;
     return json({ imported: ctx.visionImport ? ctx.visionImport() : 0 });
   }
+  if (url.pathname === '/api/vision/backfill' && request.method === 'POST') {
+    const bad = visionGuard(); if (bad) return bad;
+    return json(ctx.visionBackfill ? await ctx.visionBackfill() : { queued: 0, error: 'not available' });
+  }
   if (url.pathname === '/api/vision/forget-imported') {
     const bad = visionGuard(); if (bad) return bad;
     return json({ removed: ctx.vision ? ctx.vision.forgetImported(url.searchParams.get('all') === '1') : 0 });
+  }
+  if (url.pathname === '/api/vision/allviews') {
+    const bad = visionGuard(); if (bad) return bad;
+    if (!ctx.vision?.hasLocal()) return json({ error: 'not available' }, 404);
+    ctx.vision.setAllViews(url.searchParams.get('on') === '1'); return json(await ctx.vision.status());
   }
   if (url.pathname === '/api/vision/toggle') {
     const bad = visionGuard(); if (bad) return bad;
@@ -355,7 +364,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       exclude: list(p.get('exc')),
       or: list(p.get('or')),
       orGroups: String(p.get('og') || '').split('|').map(list).filter(g => g.length).slice(0, 10),
-      sort: ['id', 'score', 'updated', 'random', 'phone'].includes(p.get('sort')) ? p.get('sort') : 'id',
+      sort: ['id', 'score', 'popular', 'updated', 'random', 'phone'].includes(p.get('sort')) ? p.get('sort') : 'id',
       rating: ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all',
       minScore: int(p.get('min'), 0, 0, 100000),
       threshold: p.has('th') ? int(p.get('th'), 0, 0, 5) : null,

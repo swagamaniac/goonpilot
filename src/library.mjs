@@ -42,6 +42,7 @@ export function createLibrary({ dir, upstream }) {
   return {
     enabled: () => get().enabled,
     setEnabled(on) { get().enabled = !!on; if (!on) { ring.clear(); ringSize = 0; pending.clear(); } save(); return get().enabled; },
+    files() { return Object.entries(get().items).map(([key, it]) => ({ key, file: path.join(root, it.name), urls: it.urls })).filter(x => existsSync(x.file)); },
     status() { return { enabled: get().enabled, count: Object.keys(get().items).length }; },
 
     tap(res, rawUrl) {
