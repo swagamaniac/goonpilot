@@ -346,6 +346,14 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     if (!Object.keys(vals).length) return json({ error: 'No site keys found' }, 400);
     ctx.saveVars(vals, true); return json({ ok: true, keys: Object.keys(vals), skipped });
   }
+  // Clears every site key (other lines in .dev.vars stay); the old file is backed up first.
+  if (url.pathname === '/api/keys/reset' && request.method === 'POST') {
+    const bad = guardPrivate(request, url); if (bad) return bad;
+    if (!ctx.saveVars) return json({ error: 'Logins can only be changed on the computer running the server' }, 403);
+    const siteKeys = Object.values(SOURCES).flatMap(s => s.envKeys);
+    ctx.saveVars(Object.fromEntries([...siteKeys, ...Object.keys(env).filter(k => k.startsWith('CUSTOM_'))].map(k => [k, ''])), true);
+    return json({ ok: true });
+  }
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {

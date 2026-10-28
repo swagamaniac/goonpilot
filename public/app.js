@@ -1374,7 +1374,13 @@ function renderSheet() {
     pickVars.onchange = async () => { const f = pickVars.files?.[0]; if (f) importVars(await f.text()); };
     const fromFile = el('button', 'btn', 'Upload .dev.vars'); fromFile.onclick = () => pickVars.click();
     const fromPaste = el('button', 'btn', 'Import pasted'); fromPaste.onclick = () => { if (paste.value.trim()) importVars(paste.value); };
-    const imp = el('div', 'inline'); imp.append(fromFile, fromPaste, pickVars);
+    const reset = el('button', 'btn ghost', 'Reset all keys');
+    reset.onclick = async () => {
+      if (!reset.dataset.sure) { reset.dataset.sure = '1'; reset.textContent = 'Tap again: clears every site login'; setTimeout(() => { delete reset.dataset.sure; reset.textContent = 'Reset all keys'; }, 4000); return; }
+      try { await fyJson('keys/reset', {}, undefined, '/api/'); S.status = await api.status(); toast('All site keys cleared'); } catch (err) { toast(err.message); }
+      renderSheet();
+    };
+    const imp = el('div', 'inline'); imp.append(fromFile, fromPaste, reset, pickVars);
     logins.append(paste, imp, el('p', 'hint', pages
       ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
