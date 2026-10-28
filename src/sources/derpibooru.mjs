@@ -2,7 +2,7 @@
 const SITE = 'https://derpibooru.org';
 const ENV_KEY = 'DERPIBOORU_API_KEY';
 const EVERYTHING_FILTER = '56027'; // the site's "Everything" filter, so the rating picker decides what shows
-const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)', Referer: SITE + '/' };
+const UA = { 'User-Agent': 'Goonpilot/1.0' }; // plain app/version UA, no Referer (what other API clients send)
 const CATEGORY = { origin: 'artist', character: 'character', oc: 'character', species: 'species', rating: 'meta', 'content-official': 'copyright' };
 const RATINGS = new Set(['safe', 'suggestive', 'questionable', 'explicit', 'semi-grimdark', 'grimdark', 'grotesque']);
 const MEDIA = /(^|\.)(derpicdn\.net|derpibooru\.org)$/;
@@ -25,6 +25,7 @@ async function call(path, params, env, fetchImpl) {
   url.search = new URLSearchParams({ ...params, ...(env[ENV_KEY] ? { key: env[ENV_KEY] } : {}) }).toString();
   const res = await fetchImpl(url, { headers: { ...UA, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
   if (res.status === 429 || res.status === 503) throw Object.assign(new Error('Derpibooru rate limit reached'), { status: 429 });
+  if (res.headers.get('cf-mitigated') === 'challenge') throw Object.assign(new Error(`Cloudflare blocked the request to Derpibooru (bot check for non-browser apps). Works in a browser, not from the local server.`), { status: 403 });
   if (res.status === 401 || res.status === 403) throw Object.assign(new Error(`Derpibooru refused the request (${res.status}). Check ${ENV_KEY}.`), { status: res.status });
   let data;
   try { data = await res.json(); } catch { throw Object.assign(new Error(`Unexpected answer from Derpibooru (${res.status})`), { status: 502 }); }
@@ -70,7 +71,7 @@ export const derpibooru = {
   async search(q, env, fetchImpl = fetch) {
     const query = buildQuery(q), per = Math.min(q.limit, 50), page = q.page + 1;
     console.log(`  [derpibooru] page ${q.page}  q: ${query}`);
-    const sf = { score: 'score', updated: 'updated_at', random: 'random' }[q.sort] || 'created_at';
+    const sf = { score: 'score', popular: 'wilson_score', updated: 'updated_at', random: 'random' }[q.sort] || 'created_at';
     const data = await call('/api/v1/json/search/images', { q: query, page: String(page), per_page: String(per), sf, sd: 'desc', filter_id: EVERYTHING_FILTER }, env, fetchImpl);
     const raw = Array.isArray(data?.images) ? data.images : [];
     const ok = raw.filter(p => p && p.id && Array.isArray(p.tags) && p.representations?.full && !p.hidden_from_users && !p.duplicate_of).map(normalize);

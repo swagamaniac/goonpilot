@@ -52,7 +52,7 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   if (ors.length === 1) parts.push(ors[0]);
   else if (ors.length > 1) parts.push(`( ${ors.join(' ~ ')} )`);
   for (const g of orGroups) { const t = g.map(cleanTag).filter(Boolean); if (t.length) parts.push(t.length > 1 ? `( ${t.join(' ~ ')} )` : t[0]); }
-  if (sort === 'score') parts.push('sort:score:desc');
+  if (sort === 'score' || sort === 'popular') parts.push('sort:score:desc'); // rule34 has no popular sort
   else if (sort === 'updated') parts.push('sort:updated:desc');
   else if (sort === 'random') parts.push('sort:random');
   if (minScore > 0) parts.push(`score:>=${minScore}`);

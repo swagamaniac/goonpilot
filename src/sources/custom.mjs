@@ -23,7 +23,8 @@ function buildTags(q, style) {
   const group = (t) => t.length < 2 ? t : style === 'gelbooru' ? [`( ${t.join(' ~ ')} )`] : t.map(x => '~' + x);
   parts.push(...group(or.map(cleanTag).filter(Boolean)));
   for (const g of orGroups) parts.push(...group(g.map(cleanTag).filter(Boolean)));
-  const sorts = style === 'gelbooru' ? { score: 'sort:score:desc', updated: 'sort:updated:desc', random: 'sort:random' } : { score: 'order:score', updated: 'order:updated', random: 'order:random' };
+  const sorts = style === 'gelbooru' ? { score: 'sort:score:desc', popular: 'sort:score:desc', updated: 'sort:updated:desc', random: 'sort:random' }
+    : { score: 'order:score', popular: style === 'danbooru' ? 'order:rank' : 'order:score', updated: 'order:updated', random: 'order:random' };
   if (sorts[sort]) parts.push(sorts[sort]);
   if (minScore > 0) parts.push(`score:>=${minScore}`);
   if (['safe', 'questionable', 'explicit'].includes(rating)) parts.push(style === 'danbooru' ? { safe: 'rating:g,s', questionable: 'rating:q', explicit: 'rating:e' }[rating] : `rating:${rating}`);
@@ -47,13 +48,14 @@ export function makeCustom({ id, label, base, type, envPrefix, userKey = 'USERNA
   const logged = (env) => !!(env[ENV_USER] && env[ENV_KEY]);
   const authParams = (env) => !logged(env) || type === 'shimmie' ? {} : type === 'gelbooru' ? { user_id: env[ENV_USER], api_key: env[ENV_KEY] }
     : type === 'moebooru' ? { login: env[ENV_USER], password_hash: env[ENV_KEY] } : { login: env[ENV_USER], api_key: env[ENV_KEY] };
-  const UA = { 'User-Agent': 'Goonpilot/1.0 (personal)', Referer: site + '/' };
+  const UA = type === 'danbooru' ? { 'User-Agent': 'Goonpilot/1.0' } : { 'User-Agent': 'Goonpilot/1.0 (personal)', Referer: site + '/' };
 
   async function call(path, params, env, fetchImpl) {
     const url = new URL(path, site + '/');
     url.search = new URLSearchParams({ ...params, ...authParams(env) }).toString();
     const res = await fetchImpl(url, { headers: { ...UA, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
     if (res.status === 429 || res.status === 503) throw Object.assign(new Error(`${label} rate limit reached`), { status: 429 });
+    if (res.headers.get('cf-mitigated') === 'challenge') throw Object.assign(new Error(`Cloudflare blocked the request to ${label} (bot check for non-browser apps). Works in a browser, not from the local server.`), { status: 403 });
     if (res.status === 401 || res.status === 403) throw Object.assign(new Error(`${label} refused the request (${res.status}). Check its login in Settings.`), { status: res.status });
     const t = (await res.text()).trim();
     if (!res.ok) throw Object.assign(new Error(`${label} answered ${res.status}`), { status: 502 });

@@ -10,14 +10,18 @@ const CATEGORY_BY_NAME = {
 const ORDER = ['artist', 'character', 'copyright', 'species', 'general', 'meta'];
 
 const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
+// Tags with "ai" as a whole word; every e6ai post is AI, so they carry no signal there.
+export const AI_TAG = /(^|[_-])ai([_-]|$)/i;
 
-function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, shape = 'any', pr = 0.46 }) {
+function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, shape = 'any', pr = 0.46 }, drop = null) {
+  if (drop) { const k = (t) => !drop.test(cleanTag(t)); include = include.filter(k); exclude = exclude.filter(k); or = or.filter(k); orGroups = orGroups.map(g => g.filter(k)); }
   const parts = [...include.map(cleanTag), ...exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-');
   const ors = or.map(cleanTag).filter(Boolean);
   if (ors.length === 1) parts.push(ors[0]);
   else parts.push(...ors.map(t => '~' + t));
   for (const g of orGroups) { const t = g.map(cleanTag).filter(Boolean); if (t.length) parts.push(t.length > 1 ? `( ${t.map(x => '~' + x).join(' ')} )` : t[0]); }
   if (sort === 'score') parts.push('order:score');
+  else if (sort === 'popular') parts.push('order:rank');
   else if (sort === 'updated') parts.push('order:updated');
   else if (sort === 'random') parts.push('order:random');
   if (minScore > 0) parts.push(`score:>=${minScore}`);
@@ -28,7 +32,7 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   return parts.join(' ').slice(0, MAX_TAGS_LEN);
 }
 
-export function makeE621ng({ id, label, site, domain, envPrefix }) {
+export function makeE621ng({ id, label, site, domain, envPrefix, dropTag = null }) {
   const ENV_USER = `${envPrefix}_USERNAME`, ENV_KEY = `${envPrefix}_API_KEY`;
   const baseUrl = (env) => env[`${envPrefix}_BASE`] || site;
   const viaProxy = (u) => u ? `/api/${id}/media?u=${encodeURIComponent(u)}` : '';
@@ -65,7 +69,7 @@ export function makeE621ng({ id, label, site, domain, envPrefix }) {
     const tags = [];
     for (const [cat, names] of Object.entries(p.tags || {})) {
       const t = CATEGORY_BY_NAME[cat] || 'general';
-      for (const name of names || []) tags.push({ name, type: t, count: 0 });
+      for (const name of names || []) if (!dropTag || !dropTag.test(name)) tags.push({ name, type: t, count: 0 });
     }
     tags.sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type));
     const r = String(p.rating || '');
@@ -121,8 +125,9 @@ export function makeE621ng({ id, label, site, domain, envPrefix }) {
       const page = q.page + 1;
       if (page > MAX_PAGE) return { posts: [], hasMore: false };
       const url = new URL('/posts.json', baseUrl(env));
-      url.search = new URLSearchParams({ tags: buildTags(q), limit: String(q.limit), page: String(page) }).toString();
-      console.log(`  [${id}] page ${page}  tags: ${buildTags(q) || '(none)'}`);
+      const tags = buildTags(q, dropTag);
+      url.search = new URLSearchParams({ tags, limit: String(q.limit), page: String(page) }).toString();
+      console.log(`  [${id}] page ${page}  tags: ${tags || '(none)'}`);
       const data = await call(url, env, fetchImpl);
       const raw = Array.isArray(data?.posts) ? data.posts : [];
       const posts = raw.filter(p => p && p.id && p.file?.url).map(normalizePost);
@@ -151,6 +156,6 @@ export function makeE621ng({ id, label, site, domain, envPrefix }) {
 }
 
 export const e621 = makeE621ng({ id: 'e621', label: 'e621', site: 'https://e621.net', domain: 'e621.net', envPrefix: 'E621' });
-export const e6ai = makeE621ng({ id: 'e6ai', label: 'e6ai', site: 'https://e6ai.net', domain: 'e6ai.net', envPrefix: 'E6AI' });
+export const e6ai = makeE621ng({ id: 'e6ai', label: 'e6ai', site: 'https://e6ai.net', domain: 'e6ai.net', envPrefix: 'E6AI', dropTag: AI_TAG });
 
 export const _test = { buildTags };
