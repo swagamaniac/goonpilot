@@ -335,12 +335,12 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     if (!ctx.saveVars) return json({ error: 'Logins can only be changed on the computer running the server' }, 403);
     const [b, err] = await readBody(request); if (err) return err;
     if (typeof b.text !== 'string') return json({ error: 'Nothing to import' }, 400);
-    const vals = {}; let skipped = 0;
+    const siteKeys = new Set(Object.values(SOURCES).flatMap(s => s.envKeys)), vals = {}; let skipped = 0;
     for (const line of b.text.split(/\r?\n/)) {
       if (!line.trim() || line.trim().startsWith('#')) continue;
       const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
       const v = m && m[2].replace(/^["']|["']$/g, '');
-      if (!m || !/^(RULE34|E621|E6AI|GELBOORU|DANBOORU|SANKAKU|CUSTOM)_/.test(m[1]) || !v || v.length > 500) { skipped++; continue; }
+      if (!m || !(siteKeys.has(m[1]) || m[1].startsWith('CUSTOM_')) || !v || v.length > 500) { skipped++; continue; }
       vals[m[1]] = v;
     }
     if (!Object.keys(vals).length) return json({ error: 'No site keys found' }, 400);
