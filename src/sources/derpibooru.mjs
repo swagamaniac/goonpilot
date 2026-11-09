@@ -11,10 +11,11 @@ const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
 const term = (t) => { const n = cleanTag(t).replace(/_/g, ' '); return /[(),"\\*?]|\|\||&&/.test(n) ? `"${n.replace(/["\\]/g, '\\$&')}"` : n; };
 const tagType = (n) => n.startsWith('artist:') ? 'artist' : n.startsWith('oc:') ? 'character' : RATINGS.has(n) ? 'meta' : 'general';
 
-function buildQuery({ include = [], exclude = [], or = [], orGroups = [], rating = 'all', minScore = 0, shape = 'any' }) {
+function buildQuery({ include = [], exclude = [], or = [], orGroups = [], rating = 'all', minScore = 0, maxScore = 0, shape = 'any' }) {
   const parts = [...include.filter(cleanTag).map(term), ...exclude.filter(cleanTag).map(t => '-' + term(t))];
   for (const g of [or, ...orGroups]) { const t = g.filter(cleanTag).map(term); if (t.length) parts.push(t.length > 1 ? `(${t.join(' || ')})` : t[0]); }
   if (minScore > 0) parts.push(`score.gte:${minScore}`);
+  if (maxScore > 0) parts.push(`score.lte:${maxScore}`);
   if (shape === 'portrait') parts.push('aspect_ratio.lte:1.11'); else if (shape === 'landscape') parts.push('aspect_ratio.gte:1.12');
   if (rating === 'safe') parts.push('safe'); else if (rating === 'questionable') parts.push('(suggestive || questionable)'); else if (rating === 'explicit') parts.push('explicit');
   return parts.join(', ') || '*';

@@ -176,6 +176,26 @@ export async function checkTags(source, names, env, fetchImpl = fetch) {
   return out;
 }
 
+// Gelbooru swaps deprecated tags server-side; resolve them first so the search and the UI agree. One lookup per tag per day.
+const depCache = new Map();
+async function resolveDeprecated(source, query, env, fetchImpl) {
+  if (!source.resolveTag) return null;
+  const names = [...new Set([...query.include, ...query.exclude, ...query.or, ...query.orGroups.flat()])].filter(n => n.length >= 3 && !/[:*]/.test(n)).slice(0, 12);
+  const swaps = {}, deprecated = [];
+  for (const n of names) {
+    const ck = source.id + '|' + n.toLowerCase(), hit = depCache.get(ck);
+    let v = hit && hit.t > Date.now() - 864e5 ? hit.v : undefined;
+    if (v === undefined) {
+      try { v = await polite(source.id, () => source.resolveTag(n.toLowerCase(), env, fetchImpl), source.minGap); } catch { continue; }
+      depCache.set(ck, { v, t: Date.now() });
+    }
+    if (v?.to) swaps[n] = v.to; else if (v?.deprecated) deprecated.push(n);
+  }
+  const sw = (a) => a.map(t => swaps[t] || t);
+  if (Object.keys(swaps).length) Object.assign(query, { include: sw(query.include), exclude: sw(query.exclude), or: sw(query.or), orGroups: query.orGroups.map(sw) });
+  return Object.keys(swaps).length || deprecated.length ? { swaps, deprecated } : null;
+}
+
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 const crcStep = (crc, buf) => { let c = crc; for (let i = 0; i < buf.length; i++) c = CRC[(c ^ buf[i]) & 255] ^ (c >>> 8); return c >>> 0; };
 const u16 = (n) => { const b = Buffer.alloc(2); b.writeUInt16LE(n); return b; };
@@ -392,6 +412,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       sort: ['id', 'score', 'popular', 'updated', 'random', 'phone'].includes(p.get('sort')) ? p.get('sort') : 'id',
       rating: ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all',
       minScore: int(p.get('min'), 0, 0, 100000),
+      maxScore: int(p.get('max'), 0, 0, 100000),
       threshold: p.has('th') ? int(p.get('th'), 0, 0, 5) : null,
       books: p.get('bk') === 'always' ? 'always' : null,
       pr: Math.min(5, Math.max(0.2, Number(p.get('pr')) || 0.46)),
@@ -400,7 +421,9 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       limit: int(p.get('limit'), 20, 1, 100)
     };
     if (query.sort === 'phone') query.limit = 100;
+    const dep = await resolveDeprecated(source, query, env, fetchImpl);
     const result = await polite(source.id, () => source.search(query, env, fetchImpl), source.minGap);
+    if (dep) Object.assign(result, dep);
     if (query.sort === 'phone' && result.posts?.length) {
       const d = (x) => (x.w && x.h) ? Math.abs(Math.log((x.w / x.h) / query.pr)) : 9;
       result.posts = result.posts.map((x, i) => [x, i]).sort((a, b) => d(a[0]) - d(b[0]) || a[1] - b[1]).map(x => x[0]);

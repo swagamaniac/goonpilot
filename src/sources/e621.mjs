@@ -13,7 +13,7 @@ const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
 // Tags with "ai" as a whole word; every e6ai post is AI, so they carry no signal there.
 export const AI_TAG = /(^|[_-])ai([_-]|$)/i;
 
-function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, shape = 'any', pr = 0.46 }, drop = null) {
+function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, maxScore = 0, shape = 'any', pr = 0.46 }, drop = null) {
   if (drop) { const k = (t) => !drop.test(cleanTag(t)); include = include.filter(k); exclude = exclude.filter(k); or = or.filter(k); orGroups = orGroups.map(g => g.filter(k)); }
   const parts = [...include.map(cleanTag), ...exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-');
   const ors = or.map(cleanTag).filter(Boolean);
@@ -25,6 +25,7 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   else if (sort === 'updated') parts.push('order:updated');
   else if (sort === 'random') parts.push('order:random');
   if (minScore > 0) parts.push(`score:>=${minScore}`);
+  if (maxScore > 0) parts.push(`score:<=${maxScore}`);
   if (shape === 'portrait') parts.push('ratio:..1.11'); else if (shape === 'landscape') parts.push('ratio:1.12..');
   if (rating === 'safe') parts.push('rating:s');
   else if (rating === 'questionable') parts.push('rating:q');

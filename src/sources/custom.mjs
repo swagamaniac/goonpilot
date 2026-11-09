@@ -7,6 +7,7 @@ export const CUSTOM_TYPES = { gelbooru: 'Gelbooru (like rule34)', shimmie: 'Shim
 
 const MAX_TAGS_LEN = 2000;
 const TYPE_BY_NUMBER = { 0: 'general', 1: 'artist', 3: 'copyright', 4: 'character', 5: 'meta' };
+const isDeprecated = (t) => t === 6 || t === '6' || t === 'deprecated'; // gelbooru tag type 6
 const TYPE_BY_NAME = { artist: 'artist', character: 'character', copyright: 'copyright', metadata: 'meta' }; // gelbooru.com sends names
 const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
 const decodeEntities = (s) => String(s)
@@ -18,7 +19,7 @@ const rate = (r) => { r = String(r || '').toLowerCase(); return r.startsWith('e'
 const date = (v) => { const n = Number(v); const d = n > 1e8 ? new Date(n * 1000) : new Date(v); return isNaN(d) ? '' : d.toISOString(); };
 
 function buildTags(q, style) {
-  const { include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0 } = q;
+  const { include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, maxScore = 0 } = q;
   const parts = [...include.map(cleanTag), ...exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-');
   const group = (t) => t.length < 2 ? t : style === 'gelbooru' ? [`( ${t.join(' ~ ')} )`] : t.map(x => '~' + x);
   parts.push(...group(or.map(cleanTag).filter(Boolean)));
@@ -27,6 +28,7 @@ function buildTags(q, style) {
     : { score: 'order:score', popular: style === 'danbooru' ? 'order:rank' : 'order:score', updated: 'order:updated', random: 'order:random' };
   if (sorts[sort]) parts.push(sorts[sort]);
   if (minScore > 0) parts.push(`score:>=${minScore}`);
+  if (maxScore > 0) parts.push(`score:<=${maxScore}`);
   if (['safe', 'questionable', 'explicit'].includes(rating)) parts.push(style === 'danbooru' ? { safe: 'rating:g,s', questionable: 'rating:q', explicit: 'rating:e' }[rating] : `rating:${rating}`);
   return parts.join(' ').slice(0, MAX_TAGS_LEN);
 }
@@ -142,7 +144,24 @@ export function makeCustom({ id, label, base, type, envPrefix, userKey = 'USERNA
           : await call('tags.json', { 'search[name_matches]': term + '*', 'search[order]': 'count', limit: '10' }, env, fetchImpl);
       } catch { return []; }
       const list = Array.isArray(data) ? data : Array.isArray(data?.tag) ? data.tag : [];
-      return list.slice(0, 10).map(t => ({ name: decodeEntities(t.name || ''), count: Number(t.count ?? t.post_count) || 0, type: TYPE_BY_NUMBER[t.type ?? t.category] || TYPE_BY_NAME[t.type] || 'general' })).filter(t => t.name);
-    }
+      return list.slice(0, 10).map(t => ({ name: decodeEntities(t.name || ''), count: Number(t.count ?? t.post_count) || 0, type: TYPE_BY_NUMBER[t.type ?? t.category] || TYPE_BY_NAME[t.type] || 'general', ...(type === 'gelbooru' && isDeprecated(t.type) ? { deprecated: true } : {}) })).filter(t => t.name);
+    },
+
+    // Gelbooru silently swaps deprecated tags for another tag. Returns { deprecated, to } or null; to is null when no alias is listed.
+    ...(type === 'gelbooru' ? { async resolveTag(name, env, fetchImpl = fetch) {
+      const data = await call('index.php', { page: 'dapi', s: 'tag', q: 'index', json: '1', name }, env, fetchImpl);
+      const t = (Array.isArray(data?.tag) ? data.tag : []).find(x => decodeEntities(x.name || '').toLowerCase() === name);
+      if (!t || !isDeprecated(t.type)) return null;
+      let to = null;
+      try {
+        const url = new URL('index.php', site + '/');
+        url.search = new URLSearchParams({ page: 'alias', s: 'list', search: name }).toString();
+        const res = await fetchImpl(url, { headers: UA, signal: AbortSignal.timeout(20000) });
+        const html = res.ok ? await res.text() : '', re = /tags=([^"]+)">[^<]*<\/a>\s*<span[^>]*>[^<]*<\/span>\s*<b>&rarr;<\/b>\s*<a href="[^"]*?tags=([^"]+)"/g;
+        const dec = (s) => { try { return decodeURIComponent(decodeEntities(s)).toLowerCase(); } catch { return ''; } };
+        for (let m; (m = re.exec(html));) if (dec(m[1]) === name && dec(m[2])) { to = dec(m[2]); break; }
+      } catch {}
+      return { deprecated: true, to };
+    } } : {})
   };
 }

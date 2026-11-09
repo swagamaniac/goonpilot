@@ -114,12 +114,15 @@ button { cursor: pointer; }
 
 .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 40; }
 .sheet {
-  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 41;
-  width: min(640px, calc(100% - 24px)); max-height: 86%;
+  position: fixed; left: 50%; top: max(12px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 41;
+  width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); box-sizing: border-box; overflow-x: hidden; overscroll-behavior: contain;
   background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
   padding: 14px 16px 16px; display: grid; gap: 12px; overflow-y: auto; align-content: start;
 }
 .tabs { display: flex; gap: 6px; }
+.sheet > .tabs { position: sticky; top: -14px; z-index: 2; background: var(--surface); margin: -14px 0 0; padding: 14px 0 6px; }
+.tabs .sheetx { margin-left: auto; }
+@media (max-width: 560px) { .sheet > .tabs { top: -12px; margin-top: -12px; padding-top: 12px; } }
 .tabs button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
 .tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .list { display: grid; gap: 8px; }
@@ -353,3 +356,5 @@ html, body, button, a { touch-action: manipulation; }
 .field input, .fybox select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; height: 36px; padding: 0 10px; box-sizing: border-box; }
 .inline { flex-wrap: wrap; }
 .fymore { display: contents; }
+.scoredir { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+@media (max-width: 560px) { .sheet { width: calc(100% - 12px); padding: 12px; } .sheet .seg, .sheet .tabs { flex-wrap: wrap; } }

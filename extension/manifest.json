@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Goonpilot helper",
+  "version": "0.1.0",
+  "description": "Lets the browser-only Goonpilot page read booru site APIs and load their images. Only applies to requests made by github.io pages.",
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "rules",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "permissions": [
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "*://*.derpibooru.org/*",
+    "*://*.derpicdn.net/*",
+    "*://*.donmai.us/*",
+    "*://*.e621.net/*",
+    "*://*.e6ai.net/*",
+    "*://*.gelbooru.com/*",
+    "*://*.paheal-cdn.net/*",
+    "*://*.paheal.net/*",
+    "*://*.rule34.xxx/*",
+    "*://*.github.io/*"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "goonpilot-helper@goonpilot",
+      "strict_min_version": "113.0"
+    }
+  }
+}

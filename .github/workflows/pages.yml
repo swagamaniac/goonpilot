@@ -21,6 +21,7 @@ jobs:
           cp -r public/. _site/
           cp -r src _site/src
           cp pages/engine.js pages/boot.js pages/manifest.webmanifest pages/drive.js _site/
+          (cd extension && zip -qr ../_site/goonpilot-helper.zip .)
           npx -y esbuild@0.24.0 _site/engine.js --bundle --format=iife '--external:node:*' --outfile=_site/engine.js --allow-overwrite
           sed -i 's#src="app.js"#src="boot.js"#; s#</title>#</title>\n<link rel="manifest" href="manifest.webmanifest">\n<meta name="apple-mobile-web-app-capable" content="yes">#' _site/index.html
       - uses: actions/upload-pages-artifact@v3

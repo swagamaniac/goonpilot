@@ -57,7 +57,10 @@ function browserFetch(input, init = {}) {
   if (auth) { const [login, key] = atob(auth[1]).split(':'); u.searchParams.set('login', login); u.searchParams.set('api_key', key); }
   if (UPSTREAM_ONLY.test(u.hostname)) u.searchParams.set('_client', 'Goonpilot/1.0');
   for (const k of [...(auth ? ['authorization'] : []), 'user-agent', 'referer', 'range']) h.delete(k);
-  return fetch(u, { ...init, headers: h, referrerPolicy: 'no-referrer', credentials: 'omit' });
+  return fetch(u, { ...init, headers: h, referrerPolicy: 'no-referrer', credentials: 'omit' }).catch((e) => {
+    if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
+    throw new Error(`${u.hostname} blocks access from a web page. Install the Goonpilot helper extension (Settings > Site logins).`);
+  });
 }
 
 // Backup file: every stored key except the logins.

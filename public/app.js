@@ -85,7 +85,7 @@ const st = store.get('search2', null) || { ...store.get('search:' + legacySite, 
 const S = {
   sites: (st.sites || []).filter(s => ALL_SITES.includes(s)),
   terms: (st.terms || []).map(normTerm),
-  sort: st.sort || 'id', rating: st.rating || 'all', minScore: st.minScore || 0,
+  sort: st.sort || 'id', rating: st.rating || 'all', minScore: st.minScore || 0, scoreMax: !!st.scoreMax,
   pageSize: store.get('pageSize', 20),
   aheadScreens: store.get('aheadScreens', 3),
   original: store.get('original', false),
@@ -108,7 +108,7 @@ const S = {
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
-const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore });
+const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -187,9 +187,9 @@ const api = {
     // Only non-default params are sent; the server treats missing ones as the defaults. pr (screen ratio) is only used by "Fits my screen".
     const all = {
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
+      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
     };
-    const skip = { sort: 'id', rating: 'all', min: '0', page: '0', shape: 'any' };
+    const skip = { sort: 'id', rating: 'all', min: '0', max: '0', page: '0', shape: 'any' };
     const p = new URLSearchParams(Object.entries(all).filter(([k, v]) => v && v !== skip[k]));
     return getJson(`/api/${site}/posts?${p}`, signal);
   },
@@ -269,7 +269,7 @@ function buildBase() {
     } else if (t.name) lists[t.mod].push(t.name);
   }
   const uniq = a => [...new Set(a)];
-  return { include: uniq(lists['+']), exclude: uniq(lists['-']), or: uniq(lists['~']), orGroups: groups, sort: S.sort, rating: S.rating, minScore: S.minScore, limit: TOUCH.matches ? 25 : S.pageSize };
+  return { include: uniq(lists['+']), exclude: uniq(lists['-']), or: uniq(lists['~']), orGroups: groups, sort: S.sort, rating: S.rating, minScore: S.scoreMax ? 0 : S.minScore, maxScore: S.scoreMax ? S.minScore : 0, limit: TOUCH.matches ? 25 : S.pageSize };
 }
 
 function markDirty() {
@@ -692,8 +692,8 @@ $('vHint').onclick = () => setHints(!S.hintsOn);
 const HISTORY_MAX = 20;
 function recordHistory() {
   if (!S.terms.length) return;
-  const e = { sites: [...S.sites], terms: structuredClone(S.terms), sort: S.sort, rating: S.rating, minScore: S.minScore, t: Date.now() };
-  const sig = JSON.stringify([e.sites, e.terms.map(t => [t.kind, t.name, t.mod]), e.sort, e.rating, e.minScore]);
+  const e = { sites: [...S.sites], terms: structuredClone(S.terms), sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax, t: Date.now() };
+  const sig = JSON.stringify([e.sites, e.terms.map(t => [t.kind, t.name, t.mod]), e.sort, e.rating, e.minScore, e.scoreMax]);
   S.history = [{ ...e, sig }, ...S.history.filter(h => h.sig !== sig)].slice(0, HISTORY_MAX);
   store.set('history', S.history); pushUi('history', true);
 }
@@ -740,6 +740,12 @@ function withoutTags(base, skip) {
   const keep = a => a.filter(t => !skip.has(t));
   return { ...base, include: keep(base.include), exclude: keep(base.exclude), or: keep(base.or), orGroups: base.orGroups.map(keep).filter(g => g.length) };
 }
+function noteDeprecated(site, res) {
+  const sw = Object.entries(res.swaps || {}).map(([a, b]) => `${a} → ${b}`), dep = res.deprecated || [], msg = [];
+  if (sw.length) msg.push(`replaced deprecated tag${sw.length > 1 ? 's' : ''} ${sw.join(', ')}`);
+  if (dep.length) msg.push(`${dep.join(', ')} ${dep.length > 1 ? 'are' : 'is'} deprecated, results may not match`);
+  if (msg.length) toast(`${site}: ${msg.join('; ')}`);
+}
 async function checkMissing(site, gen) {
   const b = S.active.base, names = [...new Set([...b.include, ...b.or, ...b.orGroups.flat()])].slice(0, 12);
   if (!names.length) return;
@@ -769,6 +775,7 @@ async function loadMore() {
       if (gen !== S.gen) return [];
       if (f.page === 0 && !res.posts.length && shapeNow() !== 'any' && !f.noShape) { f.noShape = true; toast(`${site}: no posts in that shape, showing all`); return []; }
       if (f.page === 0 && !res.posts.length && !f.skip) checkMissing(site, gen);
+      if (f.page === 0) noteDeprecated(site, res);
       f.page++; f.hasMore = !!res.hasMore; f.hidden += res.hidden || 0;
       return res.posts.map(p => ({ ...p, site }));
     } catch (err) {
@@ -1004,7 +1011,7 @@ function drawSuggest(items) {
   sugItems = items; hl = -1; sug.replaceChildren();
   items.forEach(t => {
     const b = el('button'); b.type = 'button';
-    b.append(el('span', 'dot t-' + t.type), el('span', null, MOD_LABEL[sugMod] + t.name),
+    b.append(el('span', 'dot t-' + t.type), el('span', null, MOD_LABEL[sugMod] + t.name + (t.deprecated ? ' (deprecated)' : '')),
       el('span', 'cnt', t.count == null ? 'supertag' : fmt(t.count)));
     b.onmousedown = e => e.preventDefault();
     b.onclick = () => { pick(t, sugMod); q.focus(); };
@@ -1041,7 +1048,7 @@ q.addEventListener('keydown', e => {
 function runHistory(hh) {
   closeSheet(); sug.hidden = true;
   S.sites = hh.sites.filter(x => ALL_SITES.includes(x)); S.terms = structuredClone(hh.terms).map(normTerm);
-  S.sort = hh.sort; S.rating = hh.rating; S.minScore = hh.minScore; syncFilterUi(); newSearch();
+  S.sort = hh.sort; S.rating = hh.rating; S.minScore = hh.minScore; S.scoreMax = !!hh.scoreMax; syncFilterUi(); newSearch();
 }
 function showHistory() {
   if (q.value.trim() || !S.history.length) { if (!q.value.trim()) sug.hidden = true; return; }
@@ -1057,7 +1064,7 @@ q.addEventListener('blur', () => setTimeout(() => { sug.hidden = true; }, 120));
 $('searchBtn').onclick = () => newSearch();
 
 function syncFilterUi() {
-  $('sort').value = S.sort; $('minScore').value = S.minScore;
+  $('sort').value = S.sort; $('minScore').value = S.minScore; $('scoreDir').textContent = (S.scoreMax ? 'Max' : 'Min') + ' score ⇅';
   [...$('rating').children].forEach(x => x.classList.toggle('on', x.dataset.r === S.rating));
   [...$('orient').children].forEach(x => x.classList.toggle('on', x.dataset.o === S.orient));
   render.sites();
@@ -1072,6 +1079,7 @@ $('orient').onclick = e => {
   S.orient = b.dataset.o; store.set('orient', S.orient); syncFilterUi(); markDirty();
 };
 $('minScore').oninput = e => { S.minScore = Math.max(0, +e.target.value || 0); markDirty(); };
+$('scoreDir').onclick = e => { e.preventDefault(); S.scoreMax = !S.scoreMax; syncFilterUi(); markDirty(); };
 $('minScore').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); newSearch(); } };
 
 document.addEventListener('keydown', e => {
@@ -1119,15 +1127,18 @@ window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTi
 
 let tab = 'saved';
 function openSheet(t) {
+  const switching = tab !== t || $('sheetRoot').hidden;
   tab = t; $('sheetRoot').hidden = false;
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
   renderSheet();
+  if (switching) document.querySelector('.sheet').scrollTop = 0;
 }
 const closeSheet = () => { $('sheetRoot').hidden = true; stEdit = null; S.capture = null; };
 $('libBtn').onclick = () => openSheet(tab === 'settings' ? 'saved' : tab);
 $('setBtn').onclick = () => { openSheet('settings'); lib('library').then(r => { S.lib = r; if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {}); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }); };
 $('sheetBg').onclick = closeSheet;
-document.querySelector('.tabs').onclick = e => { const b = e.target.closest('button'); if (b) { stEdit = null; openSheet(b.dataset.tab); } };
+$('sheetX').onclick = e => { e.stopPropagation(); closeSheet(); };
+document.querySelector('.tabs').onclick = e => { const b = e.target.closest('button'); if (b && b.dataset.tab) { stEdit = null; openSheet(b.dataset.tab); } };
 const termLabel = t => MOD_LABEL[t.mod] + (t.kind === 'super' ? '★' : '') + t.name;
 
 function segField(label, opts, cur, fmtOpt, onpick) {
@@ -1264,13 +1275,14 @@ function renderSupertagEditor(body) {
   if (e.index < 0) nm.focus();
 }
 
-function renderSheet() {
+function renderSheet() { const sh = document.querySelector('.sheet'), y = sh.scrollTop; renderSheetBody(); sh.scrollTop = y; queueMicrotask(() => { sh.scrollTop = y; }); }
+function renderSheetBody() {
   const body = $('sheetBody'); body.replaceChildren();
   const list = el('div', 'list');
   if (tab === 'saved') {
     const save = el('button', 'btn', 'Save current search'); save.disabled = !S.terms.length;
     save.onclick = () => {
-      S.saved.unshift({ sites: [...S.sites], name: S.terms.map(termLabel).join(' '), terms: structuredClone(S.terms), sort: S.sort, rating: S.rating, minScore: S.minScore });
+      S.saved.unshift({ sites: [...S.sites], name: S.terms.map(termLabel).join(' '), terms: structuredClone(S.terms), sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
       store.set('saved', S.saved); renderSheet(); toast('Search saved');
     };
     body.append(save);
@@ -1278,11 +1290,11 @@ function renderSheet() {
     S.saved.forEach((s, i) => {
       const sites = s.sites || [s.site || 'rule34'];
       const it = el('div', 'item'), g = el('button', 'grow');
-      g.append(el('div', 't', s.name), el('div', 's', `${sites.join(' + ')} · ${s.sort} · ${s.rating}${s.minScore ? ' · score ≥ ' + s.minScore : ''}`));
+      g.append(el('div', 't', s.name), el('div', 's', `${sites.join(' + ')} · ${s.sort} · ${s.rating}${s.minScore ? (s.scoreMax ? ' · score ≤ ' : ' · score ≥ ') + s.minScore : ''}`));
       g.onclick = () => {
         closeSheet();
         S.sites = sites.filter(x => ALL_SITES.includes(x));
-        S.terms = structuredClone(s.terms).map(normTerm); S.sort = s.sort; S.rating = s.rating; S.minScore = s.minScore;
+        S.terms = structuredClone(s.terms).map(normTerm); S.sort = s.sort; S.rating = s.rating; S.minScore = s.minScore; S.scoreMax = !!s.scoreMax;
         S.newKey = 'saved:' + JSON.stringify([s.name, s.terms]);
         syncFilterUi(); newSearch();
       };
@@ -1296,10 +1308,10 @@ function renderSheet() {
     else { const clr = el('button', 'btn ghost', 'Clear history'); clr.onclick = () => { S.history = []; store.set('history', []); renderSheet(); }; body.append(clr); }
     S.history.forEach(hh => {
       const it = el('div', 'item'), g = el('button', 'grow');
-      g.append(el('div', 't', hh.terms.map(termLabel).join(' ')), el('div', 's', `${hh.sites.join(' + ')} · ${hh.sort} · ${hh.rating}${hh.minScore ? ' · score ≥ ' + hh.minScore : ''} · ${ago(hh.t)}`));
+      g.append(el('div', 't', hh.terms.map(termLabel).join(' ')), el('div', 's', `${hh.sites.join(' + ')} · ${hh.sort} · ${hh.rating}${hh.minScore ? (hh.scoreMax ? ' · score ≤ ' : ' · score ≥ ') + hh.minScore : ''} · ${ago(hh.t)}`));
       g.onclick = () => runHistory(hh);
       const sv = el('button', 'iconbtn', 'Save'); sv.title = 'Keep in Saved searches';
-      sv.onclick = () => { S.saved.unshift({ sites: hh.sites, name: hh.terms.map(termLabel).join(' '), terms: structuredClone(hh.terms), sort: hh.sort, rating: hh.rating, minScore: hh.minScore }); store.set('saved', S.saved); toast('Saved'); };
+      sv.onclick = () => { S.saved.unshift({ sites: hh.sites, name: hh.terms.map(termLabel).join(' '), terms: structuredClone(hh.terms), sort: hh.sort, rating: hh.rating, minScore: hh.minScore, scoreMax: hh.scoreMax }); store.set('saved', S.saved); toast('Saved'); };
       it.append(g, sv); body.append(it);
     });
   } else if (tab === 'artists') {
@@ -1381,6 +1393,12 @@ function renderSheet() {
       renderSheet();
     };
     const imp = el('div', 'inline'); imp.append(fromFile, fromPaste, reset, pickVars);
+    if (pages) {
+      const help = el('p', 'hint', 'If a site shows "blocks access from a web page", install the Goonpilot helper extension: ');
+      const dl = el('a', null, 'download it'); dl.href = 'goonpilot-helper.zip'; dl.download = '';
+      help.append(dl, ' and unzip it. Chrome / Edge: open chrome://extensions, turn on Developer mode, click Load unpacked and pick the unzipped folder. Firefox: open about:debugging#/runtime/this-firefox, click Load Temporary Add-on and pick manifest.json, then in about:addons open the helper, Permissions, and allow all its sites (Firefox removes temporary add-ons when it closes). Reload this page afterwards.');
+      logins.append(help);
+    }
     logins.append(paste, imp, el('p', 'hint', pages
       ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));

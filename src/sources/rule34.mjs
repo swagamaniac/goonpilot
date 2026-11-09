@@ -46,7 +46,7 @@ function normalizePost(p) {
   };
 }
 
-function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, shape = 'any' }) {
+function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, maxScore = 0, shape = 'any' }) {
   const parts = [...include.map(cleanTag), ...exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-');
   const ors = or.map(cleanTag).filter(Boolean);
   if (ors.length === 1) parts.push(ors[0]);
@@ -56,6 +56,7 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   else if (sort === 'updated') parts.push('sort:updated:desc');
   else if (sort === 'random') parts.push('sort:random');
   if (minScore > 0) parts.push(`score:>=${minScore}`);
+  if (maxScore > 0) parts.push(`score:<=${maxScore}`);
   if (['safe', 'questionable', 'explicit'].includes(rating)) parts.push(`rating:${rating}`);
   return parts.join(' ').slice(0, MAX_TAGS_LEN);
 }

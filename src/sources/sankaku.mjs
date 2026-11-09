@@ -206,8 +206,8 @@ export const sankaku = {
     else if (q.shape === 'landscape') posts = posts.filter(p => p.w / p.h >= 1.12);
     // Guard: stop after 3 pages in a row that leave nothing to show, so a broken filter can't page through the whole site.
     c.empty = posts.length ? 0 : (c.empty || 0) + 1;
-    if (c.empty >= 3) console.log('  [sankaku] 3 empty pages in a row, stopping this search');
-    return { posts, hasMore: !!c[want + 1] && c.empty < 3, hidden };
+    if (c.empty >= 20) console.log('  [sankaku] 20 empty pages in a row, stopping this search');
+    return { posts, hasMore: !!c[want + 1] && c.empty < 20, hidden };
   },
 
   // Endpoint taken from what the site's own search box calls; not confirmed against the live API.
