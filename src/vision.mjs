@@ -10,7 +10,7 @@ export const MODEL = {
   base: `https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3/resolve/${REV}/`,
   files: { 'model.onnx': { bytes: 467460978, sha256: 'e6774bff34d43bd49f75a47db4ef217dce701c9847b546523eb85ff6dbba1db1' }, 'selected_tags.csv': { bytes: 308468 } }
 };
-const MAX_ITEMS = 60000, MAX_IMG = 15e6, MAX_QUEUE = 20, GEN_T = 0.35, CHAR_T = 0.85, MAX_TAGS = 80;
+const MAX_ITEMS = 60000, MAX_IMG = 15e6, MAX_QUEUE = 60, GEN_T = 0.35, CHAR_T = 0.85, MAX_TAGS = 80;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 export const LOOK_DIM = 32;
@@ -108,19 +108,50 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     return { t: hits.slice(0, MAX_TAGS).map(h => h[0]), look: lookFeatures(small), h: dHash(gray), at: Date.now() };
   }
 
+  // Thumbnails the server already proxied are analysed at low priority (opt 'thumbs'), full images first.
+  const thumbQ = [];
+  // A full image always wins: drop a waiting thumbnail job for the same post so it can't block the full analysis.
+  const dropThumb = (md5) => { const i = thumbQ.findIndex(j => j.md5 === md5); if (i >= 0) { thumbQ.splice(i, 1); queued.delete(md5); } };
+  const full = (md5) => { const it = get().items[md5]; return !!it && !it.th; };
+  function tapThumb(res, u) {
+    const m = /([0-9a-f]{32})\.(?:jpe?g|png|gif|webp|avif)(?:[?#]|$)/i.exec(u) || /^sankaku:([0-9a-f]{32}):preview$/.exec(u); if (!m || !libs || !api.opt('thumbs')) return res;
+    const md5 = m[1].toLowerCase(); if (full(md5)) return res;
+    const reader = res.body.getReader(); let chunks = [], total = 0;
+    const stream = new ReadableStream({
+      async pull(c) {
+        const { done: d, value } = await reader.read();
+        if (d) {
+          c.close();
+          if (chunks?.length) {
+            const buf = Buffer.concat(chunks);
+            if (session && api.opt('thumbs') && !get().items[md5] && !queued.has(md5)) { queued.add(md5); thumbQ.push({ md5, buf, th: true }); if (thumbQ.length > 200) queued.delete(thumbQ.shift().md5); pump(); }
+          }
+          chunks = []; return;
+        }
+        if (chunks) { total += value.length; if (total > 2e6) chunks = null; else chunks.push(value); }
+        c.enqueue(value);
+      },
+      cancel(reason) { chunks = null; return reader.cancel(reason); }
+    }, { highWaterMark: 16 });
+    return new Response(stream, { status: res.status, headers: res.headers });
+  }
+
   async function pump() {
     if (busy) return; busy = true;
     try {
-      while (queue.length) {
-        const job = queue.shift(); queued.delete(job.md5);
+      while (queue.length || thumbQ.length) {
+        const job = queue.length ? queue.shift() : thumbQ.shift(); queued.delete(job.md5);
+        if (job.th && get().items[job.md5]) continue;
         try {
           if (!(await ensureSession())) { queue.length = 0; queued.clear(); break; }
           const t0 = Date.now(), r = await analyse(job.buf || readFileSync(job.file));
-          const items = get().items; if (Object.keys(items).length < MAX_ITEMS) { items[job.md5] = r; touch(); }
-          done++; last = `${job.md5.slice(0, 8)} ${r.t.length} tags ${Date.now() - t0}ms`;
+          const items = get().items, old = items[job.md5];
+          if (job.th && old && !old.th) { /* full analysis already stored */ }
+          else { if (job.th) r.th = 1; if (old || Object.keys(items).length < MAX_ITEMS) { items[job.md5] = r; touch(); } }
+          done++; last = `${job.md5.slice(0, 8)} ${job.th ? 'thumb ' : ''}${r.t.length} tags ${Date.now() - t0}ms`;
           log('vision', last);
         } catch (e) { failed++; log('err', 'vision failed ' + job.md5.slice(0, 8) + ' ' + e.message); }
-        await sleep(300);
+        await sleep(job.th ? 60 : 300);
       }
     } finally { busy = false; }
   }
@@ -128,7 +159,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
   const api = {
     setMode(fy) { inForYou = !!fy; },
     want(md5) {
-      md5 = String(md5 || '').toLowerCase(); if (!/^[0-9a-f]{32}$/.test(md5) || !session || !api.enabled() || get().items[md5] || queued.has(md5)) return;
+      md5 = String(md5 || '').toLowerCase(); if (/^[0-9a-f]{32}$/.test(md5)) dropThumb(md5); if (!/^[0-9a-f]{32}$/.test(md5) || !session || !api.enabled() || full(md5) || queued.has(md5)) return;
       const buf = recent.get(md5);
       if (buf) { recent.delete(md5); recentBytes -= buf.length; queued.add(md5); queue.push({ md5, buf }); pump(); return; }
       wanted.add(md5); if (wanted.size > 100) wanted.delete(wanted.values().next().value);
@@ -152,7 +183,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
       if (worker) { const w = worker; worker = null; session = null; device = ''; await w.terminate().catch(() => {}); }
       if (queue.length) ensureSession().then(() => pump());
     },
-    setOpt(k, v) { if (!['aiTags', 'look'].includes(k)) return; const d = get(); (d.opts || (d.opts = {}))[k] = !!v; touch(); },
+    setOpt(k, v) { if (!['aiTags', 'look', 'thumbs'].includes(k)) return; const d = get(); (d.opts || (d.opts = {}))[k] = !!v; touch(); },
     setEnabled(v) { get().enabled = !!v; touch(); },
     ready: () => !!(session && api.enabled()),
     has: (md5) => !!get().items[md5],
@@ -176,28 +207,37 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
 
     async status() {
       await loadLibs(); if (!session && libs && modelOk()) await ensureSession();
-      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, opts: { aiTags: api.opt('aiTags'), look: api.opt('look') }, ...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
+      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, busy, queued: queue.length, thumbQueued: thumbQ.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, opts: { aiTags: api.opt('aiTags'), look: api.opt('look'), thumbs: api.opt('thumbs') },...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
+    },
+    keepsAlive(rawUrl) {
+      const u = String(rawUrl || '');
+      if (!session || !api.enabled() || (inForYou === false && !allViews)) return false;
+      const m = /([0-9a-f]{32}).(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.exec(u) || /^sankaku:([0-9a-f]{32}):(?:file|sample)$/.exec(u);
+      return !!m && !full(m[1].toLowerCase());
     },
     tap(res, rawUrl) {
       try {
+        const isThumb = /\/(preview|thumbnails?)\/|thumbnail_|^sankaku:[0-9a-f]{32}:preview$/i.test(String(rawUrl || ''));
+        if (isThumb) return res && res.status === 200 && res.body && api.enabled() ? tapThumb(res, String(rawUrl)) : res;
         if (!session || !api.enabled() || (inForYou === false && !allViews) || !res || res.status !== 200 || !res.body) return res;
         if (!/^image\//i.test(res.headers.get('content-type') || '')) return res;
-        const u = String(rawUrl || ''); if (/\/(preview|thumbnails?)\/|thumbnail_/i.test(u)) return res;
+        const u = String(rawUrl || '');
         // Sankaku media goes through the proxy as "sankaku:<md5>:<kind>" instead of a file URL.
         const m = /([0-9a-f]{32})\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.exec(u) || /^sankaku:([0-9a-f]{32}):(?:file|sample)$/.exec(u); if (!m) return res;
-        const md5 = m[1].toLowerCase(); if (get().items[md5] || queued.has(md5) || recent.has(md5) || queue.length >= MAX_QUEUE) return res;
+        const md5 = m[1].toLowerCase(); dropThumb(md5); if (full(md5) || queued.has(md5) || recent.has(md5)) return res;
         const len = Number(res.headers.get('content-length')) || 0; if (len > MAX_IMG) return res;
-        const reader = res.body.getReader(); let chunks = [], total = 0, over = false;
-        const stream = new ReadableStream({
-          async pull(c) {
-            const { done: d, value } = await reader.read();
-            if (d) { c.close(); if (!over && chunks.length) { const buf = Buffer.concat(chunks); if (wanted.delete(md5) || inForYou === false) { queued.add(md5); queue.push({ md5, buf }); pump(); } else keepRecent(md5, buf); } chunks = []; return; }
-            if (!over) { total += value.length; if (total > MAX_IMG) { over = true; chunks = []; } else chunks.push(value); }
-            c.enqueue(value);
-          },
-          cancel(reason) { chunks = []; over = true; return reader.cancel(reason); }
-        }, { highWaterMark: 16 });
-        return new Response(stream, { status: res.status, headers: res.headers });
+        // Split the stream: the phone gets its copy at full speed; the copy here is only analysed if the whole image
+        // arrived. If the phone cancels (scrolled past), the download is aborted and the image is skipped.
+        const [toPhone, mine] = res.body.tee();
+        (async () => {
+          const r = mine.getReader(), chunks = []; let total = 0;
+          try { for (;;) { const { done: d, value } = await r.read(); if (d) break; total += value.length; if (total > MAX_IMG) { r.cancel().catch(() => {}); return; } chunks.push(value); } }
+          catch { return; }
+          dropThumb(md5); if (!chunks.length || full(md5) || queued.has(md5)) return;
+          const buf = Buffer.concat(chunks);
+          if (wanted.delete(md5) || inForYou === false) { if (queue.length < MAX_QUEUE) { queued.add(md5); queue.push({ md5, buf }); pump(); } } else keepRecent(md5, buf);
+        })();
+        return new Response(toPhone, { status: res.status, headers: res.headers });
       } catch { return res; }
     },
 

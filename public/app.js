@@ -1595,7 +1595,7 @@ function renderVision() {
   const show = (st) => {
     d.querySelectorAll('label').forEach(x => x.remove());
     if (!st.packages || !st.model) { info.textContent = 'Not set up. Run maintenance\\setup-vision.bat once.'; return; }
-    info.textContent = (st.ready ? `Ready${st.device ? ' on ' + st.device : ''}. ` : 'Not ready: ' + (st.error || 'loading') + '. ') + st.analysed + ' pictures analysed.';
+    info.textContent = (st.ready ? `Ready${st.device ? ' on ' + st.device : ''}. ` : 'Not ready: ' + (st.error || 'loading') + '. ') + st.analysed + ' pictures analysed, ' + (st.queued || 0) + ' in queue' + (st.thumbQueued ? ` (+${st.thumbQueued} thumbnails)` : '') + (st.last ? ` · last: ${st.last.replace(/^[0-9a-f]{8} /, '')}` : '') + (st.done || st.failed ? ` (this session: ${st.done} done, ${st.failed} failed)` : '') + '.';
     d.append(box('On (pictures you open in For you)', st.enabled, '/api/vision/toggle?on='));
     if (st.local) import('./local.js').then(m => m.visionExtras?.(d, st, box)).catch(() => {});
     const dl = el('label'), sel = document.createElement('select');
@@ -1605,7 +1605,8 @@ function renderVision() {
     dl.append('Run on ', sel); d.append(dl);
     const o = st.opts || {}; S.visionOpts = o;
     d.append(box('AI tags count in For you scoring', o.aiTags !== false, '/api/vision/opt?k=aiTags&on='),
-      box('Look counts in For you scoring', o.look !== false, '/api/vision/opt?k=look&on='));
+      box('Look counts in For you scoring', o.look !== false, '/api/vision/opt?k=look&on='),
+      box('Also analyse thumbnails that already loaded (low priority, full images first)', o.thumbs !== false, '/api/vision/opt?k=thumbs&on='));
   };
   call('/api/vision/status').then(show).catch(() => { info.textContent = 'Server not reachable.'; });
   return [d];
