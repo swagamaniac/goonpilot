@@ -14,7 +14,7 @@ function timeAgo(iso) {
 'use strict';
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
+const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -53,7 +53,7 @@ async function pullUi() {
       if (v === undefined || v === null) { if (local !== undefined) { prefDirty.add(k); pushUi('prefs'); } continue; }
       if (JSON.stringify(v) === JSON.stringify(local)) continue;
       try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {}
-      if (k === 'hotkeys') S.hk = { ...HK_DEFAULT, ...v }; else S[k] = k === 'fill' ? !!v : v;
+      if (k === 'hotkeys') S.hk = { ...HK_DEFAULT, ...v }; else S[k] = k === 'fill' ? !!v : k === 'blocked' && (Array.isArray(v) || typeof v !== 'object') ? {} : v;
     }
     renderHints(); soundIcon(); updTouchBar(); applyGestures(); render.sites();
     const srvSeen = ui.seen && typeof ui.seen === 'object' ? ui.seen : {};
@@ -104,7 +104,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
@@ -187,7 +187,7 @@ const api = {
     // Only non-default params are sent; the server treats missing ones as the defaults. pr (screen ratio) is only used by "Fits my screen".
     const all = {
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && S.skRec ? { rec: '1' } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
+      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && S.skRec ? { rec: '1' } : {}), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
     };
     const skip = { sort: 'id', rating: 'all', min: '0', max: '0', page: '0', shape: 'any' };
     const p = new URLSearchParams(Object.entries(all).filter(([k, v]) => v && v !== skip[k]));
@@ -510,7 +510,7 @@ async function loadForYou() {
   render.endState();
   let got = 0;
   try {
-    const p = new URLSearchParams({ sites: S.sites.join(' '), rating: S.rating, n: String(TOUCH.matches ? (S.posts.length ? 25 : 10) : S.fyBatch), shape: shapeNow() });
+    const p = new URLSearchParams({ sites: S.sites.join(' '), rating: S.rating, n: String(TOUCH.matches ? (S.posts.length ? 25 : 10) : S.fyBatch), shape: shapeNow(), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}) });
     const res = await fyJson('feed?' + p, undefined, signal);
     if (gen !== S.gen) return;
     const fresh = dedupe(res.posts);
@@ -1403,7 +1403,7 @@ function renderSheetBody() {
     logins.append(paste, imp, el('p', 'hint', pages
       ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
-    body.append(logins, renderSiteList(), renderCustomSites(), renderVision());
+    body.append(logins, renderSiteList(), renderBlocklist(), renderCustomSites(), renderVision());
     body.append(pages ? renderBackup() : renderExport());
     body.append(renderForYouSettings());
     if (pages) return;
@@ -1617,6 +1617,49 @@ function renderSiteList() {
   d.append(rc, el('p', 'hint', 'Only for searches with no tags. Read-only: your likes and votes are not sent to Sankaku.'));
   return d;
 }
+function renderBlocklist() {
+  const det = el('details', 'fydrop'); det.open = !!S.blOpen; det.ontoggle = () => { S.blOpen = det.open; };
+  det.append(el('summary', null, 'Blocklist'));
+  const d = el('div', 'fybox'); det.append(d);
+  d.append(el('p', 'hint', 'Ticked categories are left out of every search. Edit the list in src/blocklist.mjs.'));
+  const list = el('div', 'sitechecks');
+  for (const group of Object.keys(S.status?.blocklist || {})) {
+    const lab = el('label'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !!S.blocked[group];
+    cb.onchange = () => { S.blocked = { ...S.blocked, [group]: cb.checked }; store.set('blocked', S.blocked); markDirty(); renderSheet(); };
+    lab.append(cb, ' ' + group); list.append(lab);
+  }
+  d.append(list);
+  // Your own blocked tags.
+  d.append(el('p', 'hint', 'Your own blocked tags. Press Enter to add.'));
+  const own = el('div', 'fyblack');
+  const saveOwn = arr => { S.blockTags = arr; store.set('blockTags', arr); markDirty(); renderSheet(); };
+  S.blockTags.forEach(t => { const c = el('span', null, t), x = el('button', null, '×'); x.onclick = () => saveOwn(S.blockTags.filter(y => y !== t)); c.append(x); own.append(c); });
+  const inp = el('input', 'fyinput'); inp.placeholder = 'tag to block'; inp.setAttribute('aria-label', 'Tag to block');
+  inp.onkeydown = ev => {
+    ev.stopPropagation(); if (ev.key !== 'Enter') return; ev.preventDefault();
+    const t = inp.value.trim().toLowerCase().replace(/^-+/, '').replace(/\s+/g, '_'); if (!t) return;
+    if (S.blockTags.includes(t)) { toast('Already in your list'); return; }
+    const by = blockedCoveredBy(t); if (by) toast(`Already blocked by ${by}`);
+    saveOwn([...S.blockTags, t]);
+  };
+  d.append(own, inp);
+  d.append(el('p', 'hint', 'Blocked tags count towards the search tag limit on sites like Danbooru and Sankaku. Skip the blocklist there if searches start failing.'));
+  for (const site of BLOCK_SKIP_SITES) {
+    const lab = el('label'), cb = el('input'); cb.type = 'checkbox'; cb.checked = S.blockSkip.includes(site);
+    cb.onchange = () => { S.blockSkip = cb.checked ? [...new Set([...S.blockSkip, site])] : S.blockSkip.filter(x => x !== site); store.set('blockSkip', S.blockSkip); markDirty(); };
+    lab.append(cb, ' Skip blocklist on ' + site); d.append(lab);
+  }
+  return det;
+}
+// Blocked group names, e.g. { Gore: true, Scat: false } -> ['Gore'].
+const blockedList = () => Object.keys(S.blocked).filter(g => S.blocked[g]);
+// Name of the enabled group that already covers tag t (exact or * wildcard match), or ''.
+function blockedCoveredBy(t) {
+  const hit = p => p === t || (p.includes('*') && new RegExp('^' + p.split('*').map(x => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$').test(t));
+  return blockedList().find(g => (S.status?.blocklist?.[g] || []).some(hit)) || '';
+}
+// Sites that get a "Skip blocklist" checkbox. Add more site ids here.
+const BLOCK_SKIP_SITES = ['danbooru', 'sankaku'];
 function renderCustomSites() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Custom sites'));
   d.append(el('p', 'hint', 'Add another booru by its address and API type. Only the sites you add are contacted. The list is saved in data/boorus.json and its login fields appear above after adding. Untested.'));

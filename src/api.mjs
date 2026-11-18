@@ -4,12 +4,18 @@ import { paheal } from './sources/paheal.mjs';
 import { makeCustom, CUSTOM_TYPES } from './sources/custom.mjs';
 import { derpibooru } from './sources/derpibooru.mjs';
 import { sankaku } from './sources/sankaku.mjs';
+import { GROUPS, TAGS, applyBlocklist } from './blocklist.mjs';
 
 // Danbooru and Gelbooru reuse the custom-site adapter, minus the custom flag so it can't be removed in Settings.
 const danbooru = { ...makeCustom({ id: 'danbooru', label: 'danbooru', base: 'https://danbooru.donmai.us', type: 'danbooru', envPrefix: 'DANBOORU' }), custom: false };
 const gelbooru = { ...makeCustom({ id: 'gelbooru', label: 'gelbooru', base: 'https://gelbooru.com', type: 'gelbooru', envPrefix: 'GELBOORU', userKey: 'USER_ID' }), custom: false };
 const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal, [danbooru.id]: danbooru, [gelbooru.id]: gelbooru, [derpibooru.id]: derpibooru, [sankaku.id]: sankaku };
 let SOURCES = { ...BUILTIN };
+
+// bl = blocked group names joined by |, bls = sites that skip the blocklist.
+const blockIds = (p, site) => list(p.get('bls')).includes(site) ? [] : String(p.get('bl') || '').split('|').filter(g => GROUPS.includes(g));
+// blt = the user's own blocked tags, space separated.
+const blockOwn = (p, site) => list(p.get('bls')).includes(site) ? [] : list(p.get('blt')).map(t => t.replace(/^-+/, '')).filter(Boolean);
 const RESERVED = new Set([...Object.keys(BUILTIN), 'lib', 'foryou', 'vision', 'keys', 'status', 'boorus']);
 
 // Validates a user-added site; returns the cleaned entry or throws.
@@ -114,7 +120,7 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
       const sites = list(p.get('sites')).filter(id => SOURCES[id]?.configured(env));
       const rating = ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all';
       let warn = '';
-      const search = (id, q) => polite(id, () => SOURCES[id].search(q, env, fetchImpl), SOURCES[id].minGap)
+      const search = (id, q) => polite(id, () => SOURCES[id].search(applyBlocklist(id, { ...q }, blockIds(p, id), blockOwn(p, id)), env, fetchImpl), SOURCES[id].minGap)
         .catch(e => { if (e.status === 401) warn = `${id}: ${e.message}`; throw e; }); // a rejected login must not vanish into the other sites' results
       const exists = (id, names) => checkTags(SOURCES[id], names, env, fetchImpl);
       const out = await fy.feed({ sites, rating, shape: ['portrait', 'landscape'].includes(p.get('shape')) ? p.get('shape') : 'any', n: int(p.get('n'), 10, 1, 25), search, exists, sigExtra: ['ait', 'bl', 'blt', 'bls'].map(k => p.get(k) || '').join('') });
@@ -380,7 +386,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   if (request.method !== 'GET') return json({ error: 'Only GET is allowed' }, 405);
 
   if (url.pathname === '/api/status') {
-    return json({ types: CUSTOM_TYPES, sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
+    return json({ types: CUSTOM_TYPES, blocklist: Object.fromEntries(GROUPS.map(g => [g, TAGS[g]])), sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
   }
 
   const m = /^\/api\/([a-z0-9_-]+)\/(posts|suggest|media|tagcheck)$/.exec(url.pathname);
@@ -426,6 +432,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     };
     if (query.sort === 'phone') query.limit = 100;
     const dep = await resolveDeprecated(source, query, env, fetchImpl);
+    applyBlocklist(source.id, query, blockIds(p, source.id), blockOwn(p, source.id)); // after the tag check, so blocked tags cost no extra lookups
     // A tab that reloaded or navigated away while this search waited its turn in the site's queue must not still cost the site a request.
     const result = await polite(source.id, () => { if (request.signal?.aborted) throw Object.assign(new Error('Cancelled'), { status: 499 }); return source.search(query, env, fetchImpl); }, source.minGap);
     if (dep) Object.assign(result, dep);
