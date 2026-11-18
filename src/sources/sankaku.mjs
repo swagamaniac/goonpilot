@@ -35,10 +35,10 @@ async function login(env, fetchImpl) {
   return token.value;
 }
 
-async function call(path, params, env, fetchImpl, retry = true) {
+async function call(path, params, env, fetchImpl, retry = true, hdr = {}) {
   const url = new URL(path, API);
   url.search = new URLSearchParams({ lang: 'en', ...params }).toString();
-  const h = { ...H };
+  const h = { ...H, ...hdr };
   if (env.SANKAKU_USERNAME && env.SANKAKU_PASSWORD) h.Authorization = await login(env, fetchImpl);
   const res = await fetchImpl(url, { headers: h, signal: AbortSignal.timeout(20000) });
   const text = await res.text();
@@ -50,7 +50,7 @@ async function call(path, params, env, fetchImpl, retry = true) {
   let data = null; try { data = JSON.parse(text); } catch {}
   const code = String(data?.code || '');
   if (res.status === 401 || /(unauthorized|invalid[-_]token)$/.test(code)) {
-    if (token && retry) { token = null; return call(path, params, env, fetchImpl, false); }
+    if (token && retry) { token = null; return call(path, params, env, fetchImpl, false, hdr); }
     loginFailed = { who: `${env.SANKAKU_USERNAME}\n${env.SANKAKU_PASSWORD}` };
     throw err(LOGIN_MSG, 401);
   }
@@ -186,7 +186,8 @@ export const sankaku = {
   },
 
   async search(q, env, fetchImpl = fetch) {
-    const tags = buildTags(q), key = `${tags}|${q.limit}`;
+    // Sankaku For you: an empty search asks the account's own recommendations instead (read-only, nothing is sent back).
+    const tags = buildTags(q), rec = !!q.recommend && !tags, key = `${rec ? 'rec' : tags}|${q.limit}`;
     let c = cursors.get(key);
     if (!c || q.page === 0) { c = [null]; cursors.delete(key); cursors.set(key, c); if (cursors.size > 50) cursors.delete(cursors.keys().next().value); }
     // A jump past the known cursors (For You picks random pages) loads the next page in order instead of walking there.
@@ -195,9 +196,9 @@ export const sankaku = {
     for (let page = start; page <= want; page++) {
       if (page > 0 && !c[page]) return { posts: [], hasMore: false };
       if (page > start) await sleep(1000);
-      console.log(`  [sankaku] page ${page}  tags: ${tags || '(none)'}`);
+      console.log(`  [sankaku] page ${page}  ${rec ? 'for you' : `tags: ${tags || '(none)'}`}`);
       // Same extra parameters the site's own search sends (default_threshold 2, hide_posts_in_books in-larger-tags); Settings can lower the threshold to 0 and hide book pages always. pool:/fav: searches skip the book filter.
-      data = await call('/v2/posts/keyset', { limit: String(q.limit), tags, default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tags) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] ? { next: c[page] } : {}) }, env, fetchImpl);
+      data = await call('/v2/posts/keyset', { limit: String(q.limit), ...(rec ? { is_recommendation: 'true', page: String(page + 1) } : { tags }), default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tags) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] ? { next: c[page] } : {}) }, env, fetchImpl, true, rec ? { 'X-Sankaku-Capabilities': 'recommendation-context-v2' } : {});
       c[page + 1] = data?.meta?.next || '';
     }
     const raw = Array.isArray(data?.data) ? data.data : [];
