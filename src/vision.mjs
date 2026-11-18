@@ -52,7 +52,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
   const keepRecent = (md5, buf) => { recent.set(md5, buf); recentBytes += buf.length; while (recent.size > 10 || recentBytes > 80e6) { const [k, b] = recent.entries().next().value; recent.delete(k); recentBytes -= b.length; } };
   const queue = [], queued = new Set(); let busy = false, done = 0, failed = 0, last = '';
   let setup = { state: 'idle', pct: 0, error: '' };
-  let statsMemo = null, inForYou = null, worker = null;
+  let statsMemo = null, inForYou = null, worker = null, device = '';
   // Optional local override (data/vision-local.json, never in the repo): { "allViews": true } also analyses full images opened outside For you.
   const localFile = path.join(dir, 'vision-local.json');
   let allViews = (() => { try { return JSON.parse(readFileSync(localFile, 'utf8')).allViews === true; } catch { return false; } })();
@@ -78,10 +78,11 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     if (session) return session;
     if (!(await loadLibs()) || !modelOk()) return null;
     try {
-      const w = new Worker(new URL('./vision-worker.mjs', import.meta.url), { workerData: { model: path.join(modelDir, 'model.onnx') } });
-      await new Promise((ok, bad) => { w.once('message', ok); w.once('error', bad); });
+      const w = new Worker(new URL('./vision-worker.mjs', import.meta.url), { workerData: { model: path.join(modelDir, 'model.onnx'), device: process.env.GOONPILOT_VISION_CPU === '1' ? 'cpu' : (get().device || 'auto') } });
+      const hello = await new Promise((ok, bad) => { w.once('message', ok); w.once('error', bad); });
+      device = (hello?.ep || 'cpu') + (hello?.note ? ` (${hello.note})` : ''); log('vision', 'running on ' + device);
       const waits = new Map(); let seq = 0;
-      w.on('message', (m) => { const r = waits.get(m.id); if (!r) return; waits.delete(m.id); if (m.error) r.bad(new Error(m.error)); else r.ok(m.p); });
+      w.on('message', (m) => { const r = waits.get(m.id); if (!r) return; waits.delete(m.id); if (m.error) r.bad(new Error(m.error)); else r.ok(m); });
       w.on('error', (e) => { for (const r of waits.values()) r.bad(e); waits.clear(); session = null; sessErr = e.message; });
       w.unref(); worker = w;
       session = { run: (input) => new Promise((ok, bad) => { const id = ++seq; waits.set(id, { ok, bad }); w.postMessage({ id, input }, [input.buffer]); }) };
@@ -101,7 +102,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     ]);
     const input = new Float32Array(448 * 448 * 3);
     for (let i = 0; i < 448 * 448; i++) { input[i * 3] = big[i * 3 + 2]; input[i * 3 + 1] = big[i * 3 + 1]; input[i * 3 + 2] = big[i * 3]; }
-    const p = await session.run(input), hits = [];
+    const out = await session.run(input), p = out.p, hits = [];
     labels.forEach((l, i) => { if ((l.cat === 0 && p[i] > GEN_T) || (l.cat === 4 && p[i] > CHAR_T)) hits.push([l.name, p[i]]); });
     hits.sort((a, b) => b[1] - a[1]);
     return { t: hits.slice(0, MAX_TAGS).map(h => h[0]), look: lookFeatures(small), h: dHash(gray), at: Date.now() };
@@ -143,6 +144,12 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     hasLocal: () => existsSync(localFile),
     setAllViews(v) { if (!existsSync(localFile)) return; allViews = !!v; writeFileSync(localFile, JSON.stringify({ allViews })); },
     enabled: () => get().enabled !== false,
+    // 'auto' | 'gpu' | 'cpu'. Restarts the model thread; the next image loads it with the new choice.
+    async setDevice(v) {
+      if (!['auto', 'gpu', 'cpu'].includes(v)) return; get().device = v; touch();
+      if (worker) { const w = worker; worker = null; session = null; device = ''; await w.terminate().catch(() => {}); }
+      if (queue.length) ensureSession().then(() => pump());
+    },
     setEnabled(v) { get().enabled = !!v; touch(); },
     ready: () => !!(session && api.enabled()),
     has: (md5) => !!get().items[md5],
@@ -166,7 +173,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
 
     async status() {
       await loadLibs(); if (!session && libs && modelOk()) await ensureSession();
-      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, ...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
+      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, ...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
     },
     tap(res, rawUrl) {
       try {

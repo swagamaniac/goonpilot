@@ -1595,9 +1595,14 @@ function renderVision() {
   const show = (st) => {
     d.querySelectorAll('label').forEach(x => x.remove());
     if (!st.packages || !st.model) { info.textContent = 'Not set up. Run maintenance\\setup-vision.bat once.'; return; }
-    info.textContent = (st.ready ? 'Ready. ' : 'Not ready: ' + (st.error || 'loading') + '. ') + st.analysed + ' pictures analysed.';
+    info.textContent = (st.ready ? `Ready${st.device ? ' on ' + st.device : ''}. ` : 'Not ready: ' + (st.error || 'loading') + '. ') + st.analysed + ' pictures analysed.';
     d.append(box('On (pictures you open in For you)', st.enabled, '/api/vision/toggle?on='));
     if (st.local) import('./local.js').then(m => m.visionExtras?.(d, st, box)).catch(() => {});
+    const dl = el('label'), sel = document.createElement('select');
+    for (const [v, t] of [['auto', 'Auto (fastest)'], ['gpu', 'GPU'], ['cpu', 'CPU']]) { const op = document.createElement('option'); op.value = v; op.textContent = t; sel.append(op); }
+    sel.value = st.deviceChoice || 'auto';
+    sel.onchange = () => { info.textContent = 'Restarting analysis on ' + sel.value + '...'; call('/api/vision/device?v=' + sel.value).then(show).catch(() => toast('Could not change it')); };
+    dl.append('Run on ', sel); d.append(dl);
   };
   call('/api/vision/status').then(show).catch(() => { info.textContent = 'Server not reachable.'; });
   return [d];
