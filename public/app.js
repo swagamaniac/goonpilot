@@ -1132,14 +1132,18 @@ let resizeT;
 window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(observeSentinel, 300); });
 
 let tab = 'saved';
+// Remember how far down each tab was scrolled (this session), restored when it opens again.
+const sheetScroll = {};
+const saveSheetScroll = () => { if (!$('sheetRoot').hidden && tab) sheetScroll[tab] = document.querySelector('.sheet').scrollTop; };
 function openSheet(t) {
   const switching = tab !== t || $('sheetRoot').hidden;
+  saveSheetScroll();
   tab = t; $('sheetRoot').hidden = false;
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
   renderSheet();
-  if (switching) document.querySelector('.sheet').scrollTop = 0;
+  if (switching) { const sh = document.querySelector('.sheet'), y = sheetScroll[t] || 0; sh.scrollTop = y; requestAnimationFrame(() => { sh.scrollTop = y; }); setTimeout(() => { sh.scrollTop = y; }, 300); }
 }
-const closeSheet = () => { $('sheetRoot').hidden = true; stEdit = null; S.capture = null; };
+const closeSheet = () => { saveSheetScroll(); $('sheetRoot').hidden = true; stEdit = null; S.capture = null; };
 $('libBtn').onclick = () => openSheet(tab === 'settings' ? 'saved' : tab);
 $('setBtn').onclick = () => { openSheet('settings'); lib('library').then(r => { S.lib = r; if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {}); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }); };
 $('sheetBg').onclick = closeSheet;
