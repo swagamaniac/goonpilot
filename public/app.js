@@ -14,7 +14,7 @@ function timeAgo(iso) {
 'use strict';
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
+const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -104,7 +104,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 if (!S.sites.length) S.sites = ['rule34'];
@@ -187,7 +187,7 @@ const api = {
     // Only non-default params are sent; the server treats missing ones as the defaults. pr (screen ratio) is only used by "Fits my screen".
     const all = {
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && S.skRec ? { rec: '1' } : {}), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
+      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && S.skRec ? { rec: '1' } : {}), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
     };
     const skip = { sort: 'id', rating: 'all', min: '0', max: '0', page: '0', shape: 'any' };
     const p = new URLSearchParams(Object.entries(all).filter(([k, v]) => v && v !== skip[k]));
@@ -510,7 +510,7 @@ async function loadForYou() {
   render.endState();
   let got = 0;
   try {
-    const p = new URLSearchParams({ sites: S.sites.join(' '), rating: S.rating, n: String(TOUCH.matches ? (S.posts.length ? 25 : 10) : S.fyBatch), shape: shapeNow(), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}) });
+    const p = new URLSearchParams({ sites: S.sites.join(' '), rating: S.rating, n: String(TOUCH.matches ? (S.posts.length ? 25 : 10) : S.fyBatch), shape: shapeNow(), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}) });
     const res = await fyJson('feed?' + p, undefined, signal);
     if (gen !== S.gen) return;
     const fresh = dedupe(res.posts);
@@ -1615,6 +1615,12 @@ function renderSiteList() {
   rcb.onchange = () => { S.skRec = rcb.checked; store.set('skRec', S.skRec); markDirty(); };
   rc.append(rcb, " Sankaku For you (uses your Sankaku account's recommendations)");
   d.append(rc, el('p', 'hint', 'Only for searches with no tags. Read-only: your likes and votes are not sent to Sankaku.'));
+  if (!S.blocked['AI-generated']) {
+    const ai = el('label'), acb = el('input'); acb.type = 'checkbox'; acb.checked = S.aiTagFix;
+    acb.onchange = () => { S.aiTagFix = acb.checked; store.set('aiTagFix', S.aiTagFix); markDirty(); };
+    ai.append(acb, ' Translate the AI tag between sites');
+    d.append(ai, el('p', 'hint', 'The AI tag is renamed to each site\'s own name for it, and dropped on e621.'));
+  }
   return d;
 }
 function renderBlocklist() {

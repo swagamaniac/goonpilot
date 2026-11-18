@@ -12,6 +12,14 @@ const gelbooru = { ...makeCustom({ id: 'gelbooru', label: 'gelbooru', base: 'htt
 const BUILTIN = { [rule34.id]: rule34, [e621.id]: e621, [e6ai.id]: e6ai, [paheal.id]: paheal, [danbooru.id]: danbooru, [gelbooru.id]: gelbooru, [derpibooru.id]: derpibooru, [sankaku.id]: sankaku };
 let SOURCES = { ...BUILTIN };
 
+// One site names this tag differently; translate it for every other site (keeps any -/~ prefix).
+const aiTag = t => typeof t === 'string' ? t.replace(/^([-~]?)ai-created$/i, '$1ai_generated') : t;
+// One site has no such tag at all, so drop it there instead.
+const isAi = t => typeof t === 'string' && /^[-~]?ai[-_](created|generated)$/i.test(t);
+const skTag = t => typeof t === 'string' ? t.replace(/^([-~]?)ai_generated$/i, '$1ai-created') : t;
+const fixTags = (id, arr) => id === e621.id ? arr.filter(t => !isAi(t)) : arr.map(id === sankaku.id ? skTag : aiTag);
+const siteQuery = (id, q) => !q ? q : Object.fromEntries(Object.entries(q).map(([k, v]) =>
+  [k, Array.isArray(v) ? (v.some(Array.isArray) ? v.map(g => Array.isArray(g) ? fixTags(id, g) : g).filter(g => !Array.isArray(g) || g.length) : fixTags(id, v)) : v]));
 // bl = blocked group names joined by |, bls = sites that skip the blocklist.
 const blockIds = (p, site) => list(p.get('bls')).includes(site) ? [] : String(p.get('bl') || '').split('|').filter(g => GROUPS.includes(g));
 // blt = the user's own blocked tags, space separated.
@@ -120,7 +128,7 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
       const sites = list(p.get('sites')).filter(id => SOURCES[id]?.configured(env));
       const rating = ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all';
       let warn = '';
-      const search = (id, q) => polite(id, () => SOURCES[id].search(applyBlocklist(id, { ...q }, blockIds(p, id), blockOwn(p, id)), env, fetchImpl), SOURCES[id].minGap)
+      const search = (id, q) => polite(id, () => SOURCES[id].search(applyBlocklist(id, { ...(p.get('ait') === '0' ? q : siteQuery(id, q)) }, blockIds(p, id), blockOwn(p, id)), env, fetchImpl), SOURCES[id].minGap)
         .catch(e => { if (e.status === 401) warn = `${id}: ${e.message}`; throw e; }); // a rejected login must not vanish into the other sites' results
       const exists = (id, names) => checkTags(SOURCES[id], names, env, fetchImpl);
       const out = await fy.feed({ sites, rating, shape: ['portrait', 'landscape'].includes(p.get('shape')) ? p.get('shape') : 'any', n: int(p.get('n'), 10, 1, 25), search, exists, sigExtra: ['ait', 'bl', 'blt', 'bls'].map(k => p.get(k) || '').join('') });
@@ -431,6 +439,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       limit: int(p.get('limit'), 20, 1, 100)
     };
     if (query.sort === 'phone') query.limit = 100;
+    if (p.get('ait') !== '0') Object.assign(query, siteQuery(source.id, query));
     const dep = await resolveDeprecated(source, query, env, fetchImpl);
     applyBlocklist(source.id, query, blockIds(p, source.id), blockOwn(p, source.id)); // after the tag check, so blocked tags cost no extra lookups
     // A tab that reloaded or navigated away while this search waited its turn in the site's queue must not still cost the site a request.

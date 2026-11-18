@@ -156,7 +156,7 @@ export function makeE621ng({ id, label, site, domain, envPrefix, dropTag = null 
   };
 }
 
-export const e621 = makeE621ng({ id: 'e621', label: 'e621', site: 'https://e621.net', domain: 'e621.net', envPrefix: 'E621' });
+export const e621 = makeE621ng({ id: 'e621', label: 'e621', site: 'https://e621.net', domain: 'e621.net', envPrefix: 'E621', dropTag: AI_TAG });
 export const e6ai = makeE621ng({ id: 'e6ai', label: 'blep', site: 'https://blep.art', domain: 'blep.art', envPrefix: 'E6AI', dropTag: AI_TAG });
 
 export const _test = { buildTags };
