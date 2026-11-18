@@ -183,7 +183,8 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
         if (!session || !api.enabled() || (inForYou === false && !allViews) || !res || res.status !== 200 || !res.body) return res;
         if (!/^image\//i.test(res.headers.get('content-type') || '')) return res;
         const u = String(rawUrl || ''); if (/\/(preview|thumbnails?)\/|thumbnail_/i.test(u)) return res;
-        const m = /([0-9a-f]{32})\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.exec(u); if (!m) return res;
+        // Sankaku media goes through the proxy as "sankaku:<md5>:<kind>" instead of a file URL.
+        const m = /([0-9a-f]{32})\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.exec(u) || /^sankaku:([0-9a-f]{32}):(?:file|sample)$/.exec(u); if (!m) return res;
         const md5 = m[1].toLowerCase(); if (get().items[md5] || queued.has(md5) || recent.has(md5) || queue.length >= MAX_QUEUE) return res;
         const len = Number(res.headers.get('content-length')) || 0; if (len > MAX_IMG) return res;
         const reader = res.body.getReader(); let chunks = [], total = 0, over = false;
