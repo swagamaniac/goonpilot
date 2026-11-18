@@ -228,7 +228,8 @@ const server = http.createServer(async (req, res) => {
       res.on('close', () => logLine(`api     ${response.status} ttfb=${ttfb}ms total=${Date.now() - t0}ms ${(bytes / 1024) | 0}KB ${req.method} ${tag}${res.writableFinished ? '' : ' ABORTED'}`));
       if (response.status >= 400) { try { logLine(`err     ${tag} ${(await response.clone().text()).slice(0, 200)}`); } catch {} }
       if (!response.body || req.method === 'HEAD') return res.end();
-      return Readable.fromWeb(response.body).on('data', c => { bytes += c.length; }).on('error', () => res.destroy()).pipe(res);
+      const rd = Readable.fromWeb(response.body); res.on('close', () => { if (!res.writableFinished) rd.destroy(); });
+      return rd.on('data', c => { bytes += c.length; }).on('error', () => res.destroy()).pipe(res);
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, {}, 'Method not allowed');
     return serveStatic(req, res, url.pathname);

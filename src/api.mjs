@@ -422,7 +422,8 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     };
     if (query.sort === 'phone') query.limit = 100;
     const dep = await resolveDeprecated(source, query, env, fetchImpl);
-    const result = await polite(source.id, () => source.search(query, env, fetchImpl), source.minGap);
+    // A tab that reloaded or navigated away while this search waited its turn in the site's queue must not still cost the site a request.
+    const result = await polite(source.id, () => { if (request.signal?.aborted) throw Object.assign(new Error('Cancelled'), { status: 499 }); return source.search(query, env, fetchImpl); }, source.minGap);
     if (dep) Object.assign(result, dep);
     if (query.sort === 'phone' && result.posts?.length) {
       const d = (x) => (x.w && x.h) ? Math.abs(Math.log((x.w / x.h) / query.pr)) : 9;
