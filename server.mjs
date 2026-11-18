@@ -244,6 +244,7 @@ writeLikedList(); setInterval(writeLikedList, 30 * 60 * 1000).unref();
 
 vision.init().catch((e) => logLine(`err     vision init ${e.message}`));
 server.listen(PORT, HOST, () => {
+  try { const iso = new Date().toISOString(); writeFileSync(path.join(ROOT, 'data', 'last-start.json'), JSON.stringify({ started: Date.now(), iso, pid: process.pid })); logLine('START ' + iso + ' pid ' + process.pid); } catch {}
   const ok = env.RULE34_API_KEY && env.RULE34_USER_ID;
   console.log(`\n  Goonpilot running at  http://localhost:${PORT}  (this computer only)\n`);
   console.log(ok ? '  rule34: API key loaded' : '  rule34: no API key. rule34 requires one: add RULE34_API_KEY and RULE34_USER_ID in Settings or .dev.vars');
