@@ -634,7 +634,7 @@ async function switchProfile(id) {
   S.reported = new Set(); await loadFyState();
   toast('Profile: ' + (activeProfile()?.name || ''));
   if (S.mode === 'foryou') enterForYou(); else if (S.mode === 'liked') enterLiked(); else S.posts.forEach(refreshVote);
-  if (!$('sheetRoot').hidden && tab === 'settings') renderSheet();
+  if (!$('sheetRoot').hidden && (tab === 'settings' || tab === 'fy')) renderSheet();
 }
 $('profileSel').onchange = e => { const v = e.target.value; if (v === '__manage') { renderProfileSel(); openSheet('settings'); } else switchProfile(v); };
 $('forBtn').onclick = () => enterForYou();
@@ -1324,12 +1324,14 @@ function renderSheetBody() {
     renderArtists(body);
   } else if (tab === 'super') {
     renderSupertags(body);
-  } else if (tab === 'votes') {
-    const pr = S.fyState?.prefs;
-    if (!pr) { body.append(el('p', 'hint', 'Loading…')); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'votes' && S.fyState?.prefs) renderSheet(); }); return; }
+  } else if (tab === 'fy') {
+    if (!S.fyState) loadFyState().then(() => { if (S.fyState && !$('sheetRoot').hidden && tab === 'fy') renderSheet(); }).catch(() => {});
+    // Vote weights (was the Votes tab) live here as their own foldable section.
+    const pr = S.fyState?.prefs, votes = [];
+    if (pr) {
     const W = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1, ...pr.weights };
     const field = (k, label, opts) => segField(label, opts, W[k], v => v + '×', async v => { if (await setPrefs({ weights: { [k]: v } })) renderSheet(); });
-    body.append(group('Vote weight',
+    votes.push(group('Vote weights',
       field('like', '👍 Like', [0.5, 1, 1.5, 2, 3]),
       field('superLike', '⭐ Super like', [1, 2, 3, 4, 5]),
       field('dislike', '👎 Dislike', [0.5, 1, 1.5, 2, 3]),
@@ -1337,6 +1339,8 @@ function renderSheetBody() {
       field('dive', '🧭 Deep Dive multiplier', [0, 0.25, 0.5, 1, 1.5, 2]),
       el('p', 'hint', 'How much each vote counts for For you. The Deep Dive multiplier scales any vote given inside a Deep Dive (1× = same as normal). Changes apply to past votes too. Set per profile.')
     ));
+    }
+    body.append(...votes, renderForYouSettings());
   } else {
     const pages = !!S.status?.pages;
     queueMicrotask(() => foldGroups(body));
@@ -1410,7 +1414,6 @@ function renderSheetBody() {
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
     body.append(logins, renderSiteList(), renderBlocklist(), renderCustomSites(), renderVision());
     body.append(pages ? renderBackup() : renderExport());
-    body.append(renderForYouSettings());
     if (pages) return;
     const rs = el('button', 'btn ghost', '↻ Restart server (start.bat)');
     rs.onclick = async () => {

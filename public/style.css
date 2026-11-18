@@ -121,7 +121,11 @@ button { cursor: pointer; }
 }
 .tabs { display: flex; gap: 6px; }
 .sheet > .tabs { position: sticky; top: -14px; z-index: 2; background: var(--surface); margin: -14px 0 0; padding: 14px 0 6px; }
-.tabs .sheetx { margin-left: auto; }
+.tabs .sheetx { margin-left: auto; position: sticky; right: 0; }
+/* One scrollable row of tabs instead of wrapping onto two lines. */
+.sheet > .tabs { overflow-x: auto; scrollbar-width: none; }
+.sheet > .tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: none; white-space: nowrap; }
 @media (max-width: 560px) { .sheet > .tabs { top: -12px; margin-top: -12px; padding-top: 12px; } }
 .tabs button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
 .tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -357,4 +361,4 @@ html, body, button, a { touch-action: manipulation; }
 .inline { flex-wrap: wrap; }
 .fymore { display: contents; }
 .scoredir { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
-@media (max-width: 560px) { .sheet { width: calc(100% - 12px); padding: 12px; } .sheet .seg, .sheet .tabs { flex-wrap: wrap; } }
+@media (max-width: 560px) { .sheet { width: calc(100% - 12px); padding: 12px; } .sheet .seg { flex-wrap: wrap; } }
