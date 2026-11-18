@@ -523,10 +523,13 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       };
       const dryNow = (key) => { const t = dry.get(key); return !!t && t > now() - DRY_TTL; };
       const pickQuery = (s, site) => { let q; for (let i = 0; i < 4; i++) { q = mode === 'dive' ? diveQuery(s, site, rating, prefs.blacklist) : makeQuery(s, pf(site), site, rating); if (!dryNow(qkey(site, q))) break; } return q; };
-      for (let round = 0; round < (prefs.media === 'all' ? 2 : 3) && cands.size < n * 2; round++) {
-        const strats = mode === 'dive' ? [0, 1, 2].map(i => dive.n++) : chooseStrategies(3, hasPool, mode);
-        const off = Math.floor(random() * sites.length);
-        await collect(strats.map(async (s, i) => { const site = sites[(off + i) % sites.length]; return runJob(site, pickQuery(s, site)); }));
+      // Parallel first pass: every round sends exactly one query to EACH selected site at the same time (each site's own polite() lane still spaces its requests).
+      // Posts per batch scales with the number of sites (n per site, at most max(n, 40)) so the merged first pages are not cut down to n.
+      const nOut = Math.min(n * sites.length, Math.max(n, 40));
+      for (let round = 0; round < (prefs.media === 'all' ? 2 : 3) && cands.size < nOut * 2; round++) {
+        const k = sites.length, strats = mode === 'dive' ? Array.from({ length: k }, () => dive.n++) : chooseStrategies(Math.max(3, k), hasPool, mode);
+        const off = Math.floor(random() * k);
+        await collect(sites.map((_, i) => { const site = sites[(off + i) % k]; return runJob(site, pickQuery(strats[i % strats.length], site)); }));
       }
       let why = '', note = '';
       if (!cands.size && mode !== 'dive' && ok) {
@@ -551,7 +554,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       const cut = Math.max(1, Math.ceil(scored.length * M.cut));
       const ranked = scored.slice(0, cut), disc = scored.slice(cut);
       const out = [];
-      while (out.length < n && (ranked.length || disc.length)) {
+      while (out.length < nOut && (ranked.length || disc.length)) {
         const slot = out.length + 1;
         let item;
         if (slot % M.every === 0 && disc.length) item = disc.splice(Math.floor(random() * disc.length), 1)[0];
