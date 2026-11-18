@@ -1340,7 +1340,9 @@ function renderSheetBody() {
       el('p', 'hint', 'How much each vote counts for For you. The Deep Dive multiplier scales any vote given inside a Deep Dive (1× = same as normal). Changes apply to past votes too. Set per profile.')
     ));
     }
-    body.append(...votes, renderForYouSettings());
+    const [main, ...rest] = renderForYouSettings();
+    body.append(main, ...votes, ...rest, ...renderVision());
+    queueMicrotask(() => foldGroups(body));
   } else {
     const pages = !!S.status?.pages;
     queueMicrotask(() => foldGroups(body));
@@ -1412,7 +1414,7 @@ function renderSheetBody() {
     logins.append(paste, imp, el('p', 'hint', pages
       ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
-    body.append(logins, renderSiteList(), renderBlocklist(), renderCustomSites(), renderVision());
+    body.append(logins, renderSiteList(), renderBlocklist(), renderCustomSites());
     body.append(pages ? renderBackup() : renderExport());
     if (pages) return;
     const rs = el('button', 'btn ghost', '↻ Restart server (start.bat)');
@@ -1594,7 +1596,7 @@ function renderVision() {
     if (st.local) import('./local.js').then(m => m.visionExtras?.(d, st, box)).catch(() => {});
   };
   call('/api/vision/status').then(show).catch(() => { info.textContent = 'Server not reachable.'; });
-  return d;
+  return [d];
 }
 function renderSiteList() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Sites'));
@@ -1739,12 +1741,8 @@ function renderInsights(s) {
 }
 
 function renderForYouSettings() {
-  const det = el('details', 'fydrop');
-  det.open = !!S.fyOpen;
-  det.addEventListener('toggle', () => { S.fyOpen = det.open; });
-  det.append(el('summary', null, 'For you (beta)'));
-  const box = el('div', 'fybox');
-  det.append(box);
+  // Split into foldable sections (the For you tab folds every .fybox > h3).
+  const box = group('Recommendations & profiles'), view = group('Viewing & gestures'), taste = group('Your taste');
   box.append(renderProfiles());
   box.append(segField('Recommendations', [true, false], S.fyOn, v => v ? 'On' : 'Off', async v => {
     try { const r = await fyJson('enabled', { enabled: v }); S.fyOn = r.enabled; await loadFyState(); applyFyUi(); renderSheet(); }
@@ -1752,7 +1750,7 @@ function renderForYouSettings() {
   }));
   box.append(el('p', 'hint', 'Learns from posts you like (8), dislike (2), super like (9, counts 3x by default; see the Votes tab) or super dislike (3) on the numpad (or the number row). Everything stays in a file on this computer (data/foryou.json). Nothing is sent to any site, and it never affects normal search. Off: the button disappears and nothing is learned.'));
   box.append(renderHotkeys());
-  box.append(
+  view.append(
     segField('After voting, go to next post', [true, false], S.autoNext, v => v ? 'On' : 'Off', v => { S.autoNext = v; store.set('autoNext', v); }),
     segField('Fullscreen: fill the screen when it crops only a little', [true, false], S.fillFit, v => v ? 'On' : 'Off', v => { S.fillFit = v; store.set('fillFit', v); }),
     segField('Images & videos: load directly from the site (faster, but your network can see which sites)', [false, true], S.directMedia, v => v ? 'Directly' : 'Via my PC', v => { S.directMedia = v; store.set('directMedia', v); }),
@@ -1762,9 +1760,9 @@ function renderForYouSettings() {
     segField('Posts per batch', [5, 10, 15, 20], S.fyBatch, String, v => { S.fyBatch = v; store.set('fyBatch', v); }),
     el('p', 'hint', 'Small batches mean each vote improves the next batch (it fetches more candidates behind the scenes and shows you only the best few). The next batch loads when you reach the end.'));
   const s = S.fyState;
-  if (S.fyOn && s?.insights) box.append(renderInsights(s));
+  if (S.fyOn && s?.insights) taste.append(renderInsights(s));
   if (S.fyOn && s) {
-    box.append(el('p', 'hint', `${s.likes} likes · ${s.dislikes} dislikes · ${s.seen} posts seen`));
+    taste.append(el('p', 'hint', `${s.likes} likes · ${s.dislikes} dislikes · ${s.seen} posts seen`));
     for (const [title, tags] of [['You like', s.likedTags], ['You avoid', s.dislikedTags]]) {
       if (!tags?.length) continue;
       const row = el('div', 'fytags'); row.append(el('b', null, title + ': '));
@@ -1774,19 +1772,19 @@ function renderForYouSettings() {
         x.onclick = async () => { if (await setPrefs({ ignored: [...new Set([...s.prefs.ignored, t.name])] })) { await loadFyState(); toast(`Ignoring “${t.name}”`); renderSheet(); } };
         c.append(x); row.append(c);
       });
-      box.append(row);
+      taste.append(row);
     }
   }
   if (S.fyOn && s?.prefs) {
-    box.append(el('p', 'hint', 'Tip: press ⊘ on any “You like / You avoid” tag above to ignore it. Ignored tags: too generic to say anything about taste, so they are not learned from. Edit freely:'));
+    taste.append(el('p', 'hint', 'Tip: press ⊘ on any “You like / You avoid” tag above to ignore it. Ignored tags: too generic to say anything about taste, so they are not learned from. Edit freely:'));
     const ig = el('div', 'fyblack');
     const saveIg = async list => { if (await setPrefs({ ignored: list })) renderSheet(); };
     s.prefs.ignored.forEach(t => { const c = el('span', null, t); const x = el('button', null, '×'); x.onclick = () => saveIg(s.prefs.ignored.filter(y => y !== t)); c.append(x); ig.append(c); });
     const ii = el('input'); ii.placeholder = 'Ignore another tag, press Enter'; ii.className = 'fyinput';
     ii.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); const v = ii.value.trim(); if (v) saveIg([...s.prefs.ignored, v]); } };
     const rs = el('button', 'btn', 'Restore default ignored tags'); rs.onclick = async () => { if (await setPrefs({ resetIgnored: true })) renderSheet(); };
-    const det = el('details'); det.append(el('summary', null, `Ignored tags (${s.prefs.ignored.length})`), ig, ii, rs); box.append(det);
-    box.append(el('p', 'hint', 'Must have, Never show and Characters are in the For you bar at the top.'));
+    const det = el('details'); det.append(el('summary', null, `Ignored tags (${s.prefs.ignored.length})`), ig, ii, rs); taste.append(det);
+    taste.append(el('p', 'hint', 'Must have, Never show and Characters are in the For you bar at the top.'));
   }
   const resetLabel = `Reset “${activeProfile()?.name || 'for you'}” data`;
   const reset = el('button', 'btn danger', resetLabel); let armed = null;
@@ -1796,7 +1794,7 @@ function renderForYouSettings() {
     try { await fyJson('reset', { confirm: true }); S.votes = {}; await loadFyState(); toast("'For you' data erased"); renderSheet(); } catch (err) { toast(err.message); }
   };
   box.append(reset);
-  return det;
+  return taste.children.length > 1 ? [box, view, taste] : [box, view];
 }
 
 const MIME = { webm: 'video/webm; codecs="vp9, opus"', mp4: 'video/mp4' };
