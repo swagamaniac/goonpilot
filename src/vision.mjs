@@ -139,7 +139,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
       if (n) pump(); return n;
     },
     // Stop the model thread before the process exits (exiting while it loads can crash node).
-    close: () => worker ? worker.terminate().catch(() => {}) : Promise.resolve(),
+    close: () => { if (dirty) { clearTimeout(dirty); flush(); } return worker ? worker.terminate().catch(() => {}) : Promise.resolve(); },
     hasLocal: () => existsSync(localFile),
     setAllViews(v) { if (!existsSync(localFile)) return; allViews = !!v; writeFileSync(localFile, JSON.stringify({ allViews })); },
     enabled: () => get().enabled !== false,
