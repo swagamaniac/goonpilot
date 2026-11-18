@@ -295,6 +295,8 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
   }
 
   const dry = new Map(), DRY_TTL = 12 * 60 * 60e3;
+  // Exact searches (site + query signature) whose last answer said hasMore=false: asked again unchanged they would only return the same posts, so they are not re-sent. Cleared whenever the search context changes.
+  const exhausted = new Map();
   const isMissing = (site, name) => { if (site === 'paheal' && pahealThin(name)) return true; const L = siteTagSets.get(site); if (L && !L.has(name) && !(site === 'paheal' && L.has(PAHEAL_SITE[name]))) return true; const t = missing.get(site + '|' + name); return !!t && t > now() - MISS_TTL; };
   function pool(prof, site) {
     const all = [...prof.tags].filter(([, e]) => e.aff > 0 && e.type !== 'meta')
@@ -371,9 +373,9 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       const cp = cleanPost(post);
       if (!cp || !cp.tags.some(t => t.type !== 'meta')) throw Object.assign(new Error('Bad post data'), { status: 400 });
       dive = { site, id, post: cp, cursor: {}, n: 0 };
-      markSeen({ id, ...cp }, site); persist();
+      exhausted.clear(); markSeen({ id, ...cp }, site); persist();
     },
-    endDive() { dive = null; },
+    endDive() { dive = null; exhausted.clear(); },
 
     markViewed({ site, id, post, md5 }) {
       const d = get(); if (!isOn()) return false;
@@ -390,7 +392,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
     },
 
     setPrefs(b) {
-      dry.clear();
+      dry.clear(); exhausted.clear();
       const p = get().prefs;
       if (Object.hasOwn(MODES, b.mode)) p.mode = b.mode;
       if (['all', 'image', 'video'].includes(b.media)) p.media = b.media;
@@ -447,8 +449,8 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
 
     setEnabled(on) { if (setEnabled) setEnabled(!!on); else { get().enabled = !!on; persist(); } return isOn(); },
 
-    resetLearning() { const d = get(); dry.clear(); backup('before-reset-learning'); Object.assign(d, { votes: {}, seen: {}, seenMd5: {}, tagSeen: {}, nSeen: 0, bandit: {} }); dive = null; served.clear(); servedMd5.clear(); session.reset(); persist(); },
-    reset() { get(); dry.clear(); backup('before-reset'); data = emptyData(); dive = null; served.clear(); servedMd5.clear(); session.reset(); persist(); },
+    resetLearning() { const d = get(); dry.clear(); exhausted.clear(); backup('before-reset-learning'); Object.assign(d, { votes: {}, seen: {}, seenMd5: {}, tagSeen: {}, nSeen: 0, bandit: {} }); dive = null; served.clear(); servedMd5.clear(); session.reset(); persist(); },
+    reset() { get(); dry.clear(); exhausted.clear(); backup('before-reset'); data = emptyData(); dive = null; served.clear(); servedMd5.clear(); session.reset(); persist(); },
 
     vote({ site, id, vote, post, strat, md5, dive: inDive }) {
       const d = get();
@@ -473,7 +475,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
     shareSeen() { const d = get(); return { tagSeen: d.tagSeen || {}, nSeen: d.nSeen || 0 }; },
     evalScorer(opts = {}) { const prof = profile(); return (post) => scorePost(post, prof, false, opts.blend === true).score; },
 
-    async feed({ sites, rating = 'all', shape = 'any', n = 20, search, exists }) {
+    async feed({ sites, rating = 'all', shape = 'any', n = 20, search, exists, sigExtra = '' }) {
       const d = get();
       if (!isOn()) throw Object.assign(new Error('For you is switched off'), { status: 409 });
       if (!sites.length) throw Object.assign(new Error('No site selected'), { status: 400 });
@@ -487,6 +489,9 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
           q.include = [...new Set([...white.slice(0, 5), ...q.include])];
           q.shape = shape;
           const msite = prefs.minScore?.[site]; if (msite > 0) q.minScore = Math.max(q.minScore || 0, msite + 1);
+          // Same site + same search (tags, page, sort, filters, settings) that already ended with hasMore=false: skip, no request. Sankaku is excluded (its hasMore=false can just mean the page cursor is not known yet).
+          const sig = site === 'sankaku' ? '' : JSON.stringify([site, q.include, q.exclude, q.or, q.orGroups, q.page, q.sort, q.minScore, q.rating, q.shape, q.limit, prefs.media, white, prefs.blacklist, sigExtra]);
+          { const t = sig && exhausted.get(sig); if (t && t > now() - DRY_TTL) return { site, q, posts: [] }; }
           const unknown = q.include.filter(t => !t.includes('*')).filter(t => { const e = pf(site).tags.get(t); return !e || !e.sites.has(site) || (e.boost && e.pos + e.neg === 0); });
           const localList = site === 'paheal' ? siteTagSets.get('paheal') : null;
           if (unknown.length && (exists || localList)) {
@@ -497,6 +502,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
             if (!q.include.length && q.strat !== 'popular') return { site, q, posts: [] };
           }
           const r = await search(site, q);
+          if (sig && r.hasMore === false) { exhausted.set(sig, now()); if (exhausted.size > 500) exhausted.delete(exhausted.keys().next().value); }
           return { site, q, posts: r.posts || [] };
       };
       const runJob = async (site, q) => { const key = qkey(site, q); return { ...(await runJob0(site, q)), key }; };
