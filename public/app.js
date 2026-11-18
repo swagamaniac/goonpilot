@@ -1406,14 +1406,14 @@ function renderSheetBody() {
     body.append(pages ? renderBackup() : renderExport());
     body.append(renderForYouSettings());
     if (pages) return;
-    const rs = el('button', 'btn ghost', '↻ Restart server (start-phone.bat)');
+    const rs = el('button', 'btn ghost', '↻ Restart server (start.bat)');
     rs.onclick = async () => {
       if (!rs.dataset.sure) {
         rs.dataset.sure = '1'; rs.textContent = 'Tap again to restart (app is down a few seconds)';
-        setTimeout(() => { delete rs.dataset.sure; if (!rs.disabled) rs.textContent = '↻ Restart server (start-phone.bat)'; }, 4000); return;
+        setTimeout(() => { delete rs.dataset.sure; if (!rs.disabled) rs.textContent = '↻ Restart server (start.bat)'; }, 4000); return;
       }
       rs.disabled = true; rs.textContent = 'Restarting…';
-      try { await lib('restart', {}); } catch (err) { toast(err.message); rs.disabled = false; rs.textContent = '↻ Restart server (start-phone.bat)'; return; }
+      try { await lib('restart', {}); } catch (err) { toast(err.message); rs.disabled = false; rs.textContent = '↻ Restart server (start.bat)'; return; }
       for (let i = 0; i < 40; i++) {
         await new Promise(r => setTimeout(r, 1000));
         try { const r = await fetch('/api/status', { cache: 'no-store' }); if (r.ok) { location.reload(); return; } } catch {}

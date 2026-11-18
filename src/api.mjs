@@ -284,7 +284,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   if (url.pathname === '/api/lib/download') return handleDownload(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.library);
   if (url.pathname === '/api/lib/restart' && request.method === 'POST') {
     const bad = guardPrivate(request, url); if (bad) return bad;
-    if (!ctx.restart) return json({ error: 'Restart only works when started with start-phone.bat' }, 409);
+    if (!ctx.restart) return json({ error: 'Restart only works when started with start.bat' }, 409);
     ctx.restart(); return json({ ok: true });
   }
   if (url.pathname.startsWith('/api/lib/')) return handleLib(request, url, ctx.artists, ctx.library);

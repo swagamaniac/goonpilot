@@ -3,7 +3,7 @@ const BASE = 'http://localhost:8787', H = { 'x-goonpilot': '1' }, sleep = (ms) =
 async function call(p, method = 'GET') { const r = await fetch(BASE + p, { method, headers: H }); return { status: r.status, json: await r.json().catch(() => null) }; }
 const say = (s) => console.log(s);
 let st;
-try { st = await call('/api/vision/status'); } catch { say('The server is not running. Start it (start-phone.bat or start.bat), then run this again.'); process.exit(1); }
+try { st = await call('/api/vision/status'); } catch { say('The server is not running. Start it (start.bat), then run this again.'); process.exit(1); }
 
 const arg = process.argv[2];
 if (st.status === 200 && arg === 'backfill') {
@@ -18,7 +18,7 @@ if (st.status === 200 && (arg === 'on' || arg === 'off')) { st = await call('/ap
 if (st.status !== 200) {
   say('Restarting the server so it loads the new code...');
   const r = await call('/api/lib/restart', 'POST');
-  if (r.status !== 200) { say('The server could not restart itself. Close its window, start it again (start-phone.bat), then run this again.'); process.exit(1); }
+  if (r.status !== 200) { say('The server could not restart itself. Close its window, start it again (start.bat), then run this again.'); process.exit(1); }
   for (let i = 0; i < 45; i++) { await sleep(2000); try { st = await call('/api/vision/status'); if (st.status === 200) break; } catch {} }
   if (st.status !== 200) { say('The server did not come back. Start it by hand and run this again.'); process.exit(1); }
 }
