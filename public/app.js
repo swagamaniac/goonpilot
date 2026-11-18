@@ -1431,7 +1431,7 @@ function renderSheetBody() {
       }
       rs.textContent = 'Server did not come back. Check the PC.';
     };
-    body.append(group('Server', rs));
+    body.prepend(group('Server', rs));
   }
 }
 // Settings sections fold when their heading is tapped; which ones are folded is remembered on this device only.
