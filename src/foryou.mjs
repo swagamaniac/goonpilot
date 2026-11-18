@@ -131,9 +131,9 @@ export const tagMissing = {
 const LR_MIN = 40, LR_MAX = 0.8;
 const LOOK_W = 0.08;
 export function createForYou({ load, save, backup = () => {}, enabled, setEnabled, now = Date.now, random = Math.random, scope = 'normal', shared = null, vision = null, md5Of = null }) {
-  const aiTags = (md5, have) => { const t = vision && md5 && vision.enabled() ? vision.tags(md5) : null; return t ? t.filter(n => !have.has(n)) : []; }
+  const aiTags = (md5, have) => { const t = vision && md5 && vision.enabled() && vision.opt('aiTags') ? vision.tags(md5) : null; return t ? t.filter(n => !have.has(n)) : []; }
   const voteTags = (v) => { const base = v.site === 'e6ai' || v.site === 'e621' ?v.tags.filter(t => !AI_TAG.test(t[0])) : v.tags; if (!vision || !md5Of) return base; const md5 = md5Of(v.site, v.id), have = new Set(v.tags.map(t => t[0])), extra = aiTags(md5, have); return extra.length ? [...base, ...extra.map(n => [n, 'ai'])] : base; };
-  const lookOf = (md5) => { const l = vision && md5 && vision.enabled() ? vision.look(md5) : null; return l ? vision.z(l) : null; };
+  const lookOf = (md5) => { const l = vision && md5 && vision.enabled() && vision.opt('look') ? vision.look(md5) : null; return l ? vision.z(l) : null; };
   let data = null;
   let ignCache = null;
   const ignoredSet = () => { const a = get().prefs.ignored; if (!ignCache || ignCache.a !== a) ignCache = { a, set: makeIgnore(a) }; return ignCache.set; };

@@ -144,12 +144,15 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     hasLocal: () => existsSync(localFile),
     setAllViews(v) { if (!existsSync(localFile)) return; allViews = !!v; writeFileSync(localFile, JSON.stringify({ allViews })); },
     enabled: () => get().enabled !== false,
+    // Per-feature switches (default on): aiTags / look = used in For you scoring, thumbs = also analyse thumbnails.
+    opt: (k) => (get().opts || {})[k] !== false,
     // 'auto' | 'gpu' | 'cpu'. Restarts the model thread; the next image loads it with the new choice.
     async setDevice(v) {
       if (!['auto', 'gpu', 'cpu'].includes(v)) return; get().device = v; touch();
       if (worker) { const w = worker; worker = null; session = null; device = ''; await w.terminate().catch(() => {}); }
       if (queue.length) ensureSession().then(() => pump());
     },
+    setOpt(k, v) { if (!['aiTags', 'look'].includes(k)) return; const d = get(); (d.opts || (d.opts = {}))[k] = !!v; touch(); },
     setEnabled(v) { get().enabled = !!v; touch(); },
     ready: () => !!(session && api.enabled()),
     has: (md5) => !!get().items[md5],
@@ -173,7 +176,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
 
     async status() {
       await loadLibs(); if (!session && libs && modelOk()) await ensureSession();
-      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, ...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
+      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, queued: queue.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, opts: { aiTags: api.opt('aiTags'), look: api.opt('look') }, ...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
     },
     tap(res, rawUrl) {
       try {

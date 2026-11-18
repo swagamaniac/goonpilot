@@ -342,6 +342,11 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     if (!ctx.vision) return json({ error: 'not available' }, 409);
     await ctx.vision.setDevice(String(url.searchParams.get('v') || '')); return json(await ctx.vision.status());
   }
+  if (url.pathname === '/api/vision/opt') {
+    const bad = visionGuard(); if (bad) return bad;
+    if (!ctx.vision) return json({ error: 'not available' }, 409);
+    ctx.vision.setOpt(String(url.searchParams.get('k') || ''), url.searchParams.get('on') !== '0'); return json(await ctx.vision.status());
+  }
   if (url.pathname === '/api/vision/toggle') {
     const bad = visionGuard(); if (bad) return bad;
     if (!ctx.vision) return json({ error: 'not available' }, 409);

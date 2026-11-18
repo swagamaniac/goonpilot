@@ -1603,6 +1603,9 @@ function renderVision() {
     sel.value = st.deviceChoice || 'auto';
     sel.onchange = () => { info.textContent = 'Restarting analysis on ' + sel.value + '...'; call('/api/vision/device?v=' + sel.value).then(show).catch(() => toast('Could not change it')); };
     dl.append('Run on ', sel); d.append(dl);
+    const o = st.opts || {}; S.visionOpts = o;
+    d.append(box('AI tags count in For you scoring', o.aiTags !== false, '/api/vision/opt?k=aiTags&on='),
+      box('Look counts in For you scoring', o.look !== false, '/api/vision/opt?k=look&on='));
   };
   call('/api/vision/status').then(show).catch(() => { info.textContent = 'Server not reachable.'; });
   return [d];
