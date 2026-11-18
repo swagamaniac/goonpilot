@@ -341,21 +341,26 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
   function diveWeights() {
     const m = new Map();
     for (const t of dive.post.tags) if (!skipTag(t)) m.set(t.name, DIVE_W[t.type] ?? 1);
+    // AI visual tags of the seed (if analysed) count like general tags. Scoring only: diveQuery skips them (they may not exist on every site).
+    for (const n of aiTags(dive.md5, new Set(m.keys()))) m.set(n, DIVE_W.general);
     return m;
   }
   const diveIdf = (name) => 1 / Math.sqrt(1 + (get().tagSeen[name] || 0));
   function diveSimilarity(post) {
     const a = diveWeights(), b = new Map();
     for (const t of post.tags) if (!skipTag(t)) b.set(t.name, DIVE_W[t.type] ?? 1);
+    for (const n of aiTags(post.md5, new Set(b.keys()))) b.set(n, DIVE_W.general);
     let shared = 0, mass = 0, union = 0;
     for (const name of new Set([...a.keys(), ...b.keys()])) {
       const w = diveIdf(name), x = (a.get(name) || 0) * w, y = (b.get(name) || 0) * w;
       shared += Math.min(x, y); mass += x; union += Math.max(x, y);
     }
-    return mass ? clamp(0.7 * shared / mass + 0.3 * shared / Math.max(1e-8, union), 0, 1) : 0;
+    const tagSim = mass ? clamp(0.7 * shared / mass + 0.3 * shared / Math.max(1e-8, union), 0, 1) : 0;
+    return tagSim;
   }
   function diveQuery(i, site, rating, blacklist) {
-    const top = [...diveWeights()].map(([name, w]) => ({ name, w: w * diveIdf(name) })).sort((a, b) => b.w - a.w).slice(0, 4).map(x => x.name);
+    const own = new Set(dive.post.tags.map(t => t.name));
+    const top = [...diveWeights()].filter(([name]) => own.has(name)).map(([name, w]) => ({ name, w: w * diveIdf(name) })).sort((a, b) => b.w - a.w).slice(0, 4).map(x => x.name);
     const sets = top.length > 1 ? [[top[0], top[1]], [top[0]], [top[1]], ...(top[2] ? [[top[2]]] : [])] : [top];
     const inc = sets[i % sets.length], key = inc.join(' ');
     const page = dive.cursor[key] = (dive.cursor[key] ?? -1) + 1;
@@ -365,14 +370,14 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
   return {
     get enabled() { return isOn(); },
     counts() { let likes = 0, dislikes = 0; for (const v of Object.values(get().votes)) v.vote > 0 ? likes++ : dislikes++; return { likes, dislikes }; },
-    get dive() { return dive ? { site: dive.site, id: dive.id } : null; },
+    get dive() { return dive ? { site: dive.site, id: dive.id, md5: dive.md5 || '' } : null; },
 
     startDive({ site, id, post }) {
       if (!isOn()) throw Object.assign(new Error('For you is switched off'), { status: 409 });
       if (!/^[a-z0-9_-]{1,20}$/.test(site) || !Number.isInteger(id) || id < 0) throw Object.assign(new Error('Bad post'), { status: 400 });
       const cp = cleanPost(post);
       if (!cp || !cp.tags.some(t => t.type !== 'meta')) throw Object.assign(new Error('Bad post data'), { status: 400 });
-      dive = { site, id, post: cp, cursor: {}, n: 0 };
+      dive = { site, id, post: cp, md5: /^[0-9a-f]{32}$/.test(post?.md5 || '') ? post.md5 : '', cursor: {}, n: 0 };
       exhausted.clear(); markSeen({ id, ...cp }, site); persist();
     },
     endDive() { dive = null; exhausted.clear(); },

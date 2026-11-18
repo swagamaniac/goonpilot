@@ -481,7 +481,7 @@ $('fyMedia').onclick = async e => { const b = e.target.closest('button'); if (b 
 async function startDive(p) {
   if (!S.fyOn || !p) return;
   try {
-    const r = await fyJson('dive', { site: p.site, id: p.id, post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type } });
+    const r = await fyJson('dive', { site: p.site, id: p.id, post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type, md5: p.md5 } });
     S.fyState = { ...S.fyState, dive: r.dive };
     if (S.vOpen) viewer.close();
     enterForYou();
@@ -513,7 +513,7 @@ async function loadForYou() {
     const p = new URLSearchParams({ sites: S.sites.join(' '), rating: S.rating, n: String(TOUCH.matches ? (S.posts.length ? 25 : 10) : S.fyBatch), shape: shapeNow(), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}) });
     const res = await fyJson('feed?' + p, undefined, signal);
     if (gen !== S.gen) return;
-    const fresh = dedupe(res.posts);
+    let fresh = dedupe(res.posts);
     const from = S.posts.length; S.posts.push(...fresh); got = fresh.length;
     await showNew(from, gen);
     if (gen !== S.gen) return;
@@ -841,6 +841,7 @@ const render = {
     const s = $('status'); s.replaceChildren();
     if (S.mode === 'liked') s.append(el('span', 'pill', `♥ Your votes: ${S.posts.length} of ${S.liked.total}`));
     else if (S.mode === 'foryou') s.append(el('span', 'pill', '✦ For you (beta): separate from search'));
+
     else if (S.dirty) s.append(el('span', 'pill busy', 'Not searched yet: press Search or Enter'));
     else if (S.newSince) s.append(el('span', 'pill', Object.keys(S.newSince.prev).length ? `${S.newSince.n} new since last time` : 'First check: next time, new posts get a NEW badge'));
     const sites = S.active ? S.active.sites : [];
@@ -1067,7 +1068,7 @@ function showHistory() {
 }
 q.addEventListener('focus', showHistory); q.addEventListener('click', showHistory);
 q.addEventListener('blur', () => setTimeout(() => { sug.hidden = true; }, 120));
-$('searchBtn').onclick = () => newSearch();
+$('searchBtn').onclick = () => { newSearch(); };
 
 function syncFilterUi() {
   $('sort').value = S.sort; $('minScore').value = S.minScore; $('scoreDir').textContent = (S.scoreMax ? 'Max' : 'Min') + ' score ⇅';
@@ -1864,7 +1865,8 @@ function applyGestures() { document.body.classList.toggle('swipe-votes', TOUCH.m
     }
     if (S.gDouble && Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 350) {
       if (lastTap && Date.now() - lastTap.t < 350 && Math.abs(start.x - lastTap.x) < 48 && Math.abs(start.y - lastTap.y) < 48) {
-        lastTap = null; burst(e.clientX, e.clientY, '❤'); castVote(p, 1);
+        lastTap = null;
+        burst(e.clientX, e.clientY, '❤'); castVote(p, 1);
       } else lastTap = { t: Date.now(), x: start.x, y: start.y };
     }
   });
@@ -1876,7 +1878,8 @@ function applyGestures() { document.body.classList.toggle('swipe-votes', TOUCH.m
     if (Math.abs(dx) < 14 || Math.abs(dx) < 1.3 * Math.abs(dy)) return;
     swiped = true; lastTap = null; if (e.cancelable) e.preventDefault();
     const p = S.posts[S.vIndex]; if (!p) return;
-    if (dx < 0) viewer.outer.scrollTo({ left: viewer.outer.clientWidth, behavior: 'smooth' }); else castVote(p, -1);
+    if (dx < 0) viewer.outer.scrollTo({ left: viewer.outer.clientWidth, behavior: 'smooth' });
+    else castVote(p, -1);
   }, { passive: false });
   area.addEventListener('touchend', () => { ts = null; }, { passive: true });
   let pd = null;
