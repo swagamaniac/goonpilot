@@ -114,7 +114,7 @@ const TYPES = {
   '.webmanifest': 'application/manifest+json', '.json': 'application/json'
 };
 
-const MEDIA_HOSTS = 'https://*.rule34.xxx https://rule34.xxx https://static1.e621.net https://*.e621.net https://*.e6ai.net';
+const MEDIA_HOSTS = 'https://*.rule34.xxx https://rule34.xxx https://static1.e621.net https://*.e621.net https://*.e6ai.net https://*.blep.art https://blep.art';
 const SECURITY_HEADERS = {
   'Content-Security-Policy': [
     "default-src 'self'",

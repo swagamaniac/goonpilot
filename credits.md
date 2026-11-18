@@ -30,4 +30,4 @@ The image analysis also uses [onnxruntime-node](https://github.com/microsoft/onn
 Goonpilot ships no font files. The interface uses your system's own fonts and emoji. The only bundled image is the WTFPL badge (`public/img/wtfpl-badge-88x31.png`) from [wtfpl.net](http://www.wtfpl.net/), released under the WTFPL.
 
 ## The sites
-Thanks to rule34.xxx, e621, e6ai and rule34.paheal.net for their public APIs.
+Thanks to rule34.xxx, e621, blep.art and rule34.paheal.net for their public APIs.

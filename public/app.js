@@ -164,7 +164,7 @@ async function getJson(url, signal) {
   if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   return data;
 }
-const SITE_MEDIA = /(^|\.)(rule34\.xxx|e621\.net|e6ai\.net)$/;
+const SITE_MEDIA = /(^|\.)(rule34\.xxx|e621\.net|e6ai\.net|blep\.art)$/;
 function mu(u) {
   if (!S.directMedia || !u) return u;
   const m = /^\/api\/(?:rule34|e621|e6ai)\/media\?u=(.+)$/.exec(u); if (!m) return u;
@@ -413,7 +413,7 @@ function renderBoostPanel(p) {
 function renderScorePanel(p) {
   const ms = S.fyState.prefs.minScore || {};
   p.append(el('p', 'hint', 'Only show posts with a score GREATER than this, per site (empty or 0 = off). Scores differ a lot between sites, so set them separately.'));
-  for (const [site, label] of [['rule34', 'rule34'], ['e621', 'e621'], ['e6ai', 'e6ai']]) {
+  for (const [site, label] of [['rule34', 'rule34'], ['e621', 'e621'], ['e6ai', 'blep']]) {
     const f = el('div', 'field'); f.append(el('span', null, label + ' score >'));
     const inp = el('input', 'fyinput'); inp.type = 'number'; inp.min = '0'; inp.step = '10'; inp.value = ms[site] || ''; inp.placeholder = 'off'; inp.style.width = '110px';
     const save = async () => { if (await setPrefs({ minScore: { [site]: Number(inp.value) || 0 } })) fyPanelDirty = true; };
@@ -1348,7 +1348,7 @@ function renderSheetBody() {
       segField('Auto-advance delay (images)', [3, 5, 8, 12], S.autoDelay, v => v + ' s', v => { S.autoDelay = v; store.set('autoDelay', v); }),
       segField('Loop videos', [true, false], S.loopVideos, v => v ? 'On' : 'Off', v => { S.loopVideos = v; store.set('loopVideos', v); const cur = viewer.slides[S.vIndex]?.querySelector('video'); if (cur) cur.loop = v && !S.auto; }),
       el('p', 'hint', 'Off: a video stops at the end, and "next after vote" waits for it to finish before moving on. Auto-advance never loops.'),
-      segField('Video quality (e621 / e6ai)', ['medium', 'auto', 'original', 'compatible'], S.videoQuality, v => ({ medium: 'Medium (720p)', auto: 'Auto', original: 'Original only', compatible: 'Compatible' })[v], v => { S.videoQuality = v; store.set('videoQuality', v); }),
+      segField('Video quality (e621 / blep)', ['medium', 'auto', 'original', 'compatible'], S.videoQuality, v => ({ medium: 'Medium (720p)', auto: 'Auto', original: 'Original only', compatible: 'Compatible' })[v], v => { S.videoQuality = v; store.set('videoQuality', v); }),
       el('p', 'hint', 'Auto: the original (webm/VP9, full quality) when your browser can play it, otherwise the mp4 copy (max 1080p, 3 Mbit/s). Original only: always the original, never the copy, even if it fails to play. Compatible: always the mp4 copy.')
     );
     if (!pages) view.append(
@@ -1372,7 +1372,7 @@ function renderSheetBody() {
     }
     logins.append(el('p', 'hint', pages
       ? 'Saved in this browser only, like everything else here. Leave a field empty to keep its current value.'
-      : 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login. e621 and e6ai images are loaded through your local server with your login.'));
+      : 'Saved to .dev.vars on the computer running the server (only from that computer). Leave a field empty to keep its current value. Restart the server if a site still ignores a new login. e621 and blep images are loaded through your local server with your login.'));
     const paste = el('textarea'); paste.rows = 3; paste.spellcheck = false; paste.autocomplete = 'off'; paste.placeholder = 'Paste a .dev.vars file here (KEY=value per line)';
     const pickVars = el('input'); pickVars.type = 'file'; pickVars.hidden = true;
     const importVars = async (text) => {
@@ -1562,7 +1562,7 @@ function renderProfiles() {
     if (await profileAction({ action: 'create', name: inp.value, switch: true })) { S.reported = new Set(); await loadFyState(); toast('Profile created and selected'); if (S.mode === 'foryou') enterForYou(); else if (S.mode === 'liked') enterLiked(); else S.posts.forEach(refreshVote); renderSheet(); }
   };
   d.append(inp);
-  d.append(el('p', 'hint', 'Paheal profiles: “from other sites” learns from your likes on rule34 / e621 / e6ai (read only, they are never changed) plus what you like on Paheal. “Own” learns only from what you like on Paheal.'));
+  d.append(el('p', 'hint', 'Paheal profiles: “from other sites” learns from your likes on rule34 / e621 / blep (read only, they are never changed) plus what you like on Paheal. “Own” learns only from what you like on Paheal.'));
   for (const [kind, label, dflt] of [['paheal-all', '+ Paheal profile (from other sites)', 'Paheal (from other sites)'], ['paheal-own', '+ Paheal profile (own likes only)', 'Paheal (own)']]) {
     const b = el('button', 'mini', label); b.type = 'button';
     b.onclick = async () => {

@@ -7,7 +7,7 @@ RULE34_USER_ID=
 E621_USERNAME=
 E621_API_KEY=
 
-# e6ai (same software as e621). API key: e6ai.net > Account > Manage API Access
+# blep.art (same software as e621). API key: blep.art > Account > Manage API Access
 E6AI_USERNAME=
 E6AI_API_KEY=
 

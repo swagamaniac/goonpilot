@@ -21,6 +21,8 @@
     "*://*.donmai.us/*",
     "*://*.e621.net/*",
     "*://*.e6ai.net/*",
+    "*://*.blep.art/*",
+    "*://blep.art/*",
     "*://*.gelbooru.com/*",
     "*://*.paheal-cdn.net/*",
     "*://*.paheal.net/*",

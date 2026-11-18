@@ -10,7 +10,7 @@ const CATEGORY_BY_NAME = {
 const ORDER = ['artist', 'character', 'copyright', 'species', 'general', 'meta'];
 
 const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
-// Tags with "ai" as a whole word; every e6ai post is AI, so they carry no signal there.
+// Tags with "ai" as a whole word; every blep post is AI, so they carry no signal there.
 export const AI_TAG = /(^|[_-])ai([_-]|$)/i;
 
 function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', minScore = 0, maxScore = 0, shape = 'any', pr = 0.46 }, drop = null) {
@@ -157,6 +157,6 @@ export function makeE621ng({ id, label, site, domain, envPrefix, dropTag = null 
 }
 
 export const e621 = makeE621ng({ id: 'e621', label: 'e621', site: 'https://e621.net', domain: 'e621.net', envPrefix: 'E621' });
-export const e6ai = makeE621ng({ id: 'e6ai', label: 'e6ai', site: 'https://e6ai.net', domain: 'e6ai.net', envPrefix: 'E6AI', dropTag: AI_TAG });
+export const e6ai = makeE621ng({ id: 'e6ai', label: 'blep', site: 'https://blep.art', domain: 'blep.art', envPrefix: 'E6AI', dropTag: AI_TAG });
 
 export const _test = { buildTags };

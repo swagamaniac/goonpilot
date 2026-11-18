@@ -49,7 +49,7 @@ function build() {
 }
 
 // Browsers can't send User-Agent and preflight on Authorization, so logins go in the query string instead.
-const UPSTREAM_ONLY = /(^|\.)(e621\.net|e6ai\.net)$/;
+const UPSTREAM_ONLY = /(^|\.)(e621\.net|e6ai\.net|blep\.art)$/;
 function browserFetch(input, init = {}) {
   const u = new URL(typeof input === 'string' ? input : input.url || String(input));
   const h = new Headers(init.headers || {});
