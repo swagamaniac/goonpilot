@@ -80,8 +80,8 @@ function parsePrefix(text) {
 }
 const nextMod = m => MODS[(MODS.indexOf(m) + 1) % MODS.length];
 
-const legacySite = store.get('site', 'rule34');
-const st = store.get('search2', null) || { ...store.get('search:' + legacySite, store.get('search', {})), sites: [legacySite] };
+const legacySite = store.get('site', null);
+const st = store.get('search2', null) || { ...store.get('search:' + legacySite, store.get('search', {})), sites: legacySite ? [legacySite] : [] };
 const S = {
   sites: (st.sites || []).filter(s => ALL_SITES.includes(s)),
   terms: (st.terms || []).map(normTerm),
@@ -107,7 +107,6 @@ const S = {
   hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
-if (!S.sites.length) S.sites = ['rule34'];
 const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
 
 const $ = id => document.getElementById(id);
@@ -152,7 +151,7 @@ function syncSites(status) {
   for (const id of custom) gates[id] ||= makeGate();
   store.set('customSites', custom);
   const kept = S.sites.filter(x => ALL_SITES.includes(x));
-  if (kept.length !== S.sites.length) { S.sites = kept.length ? kept : ['rule34']; markDirty(); }
+  if (kept.length !== S.sites.length) { S.sites = kept; markDirty(); }
 }
 
 async function getJson(url, signal) {
@@ -505,6 +504,7 @@ function enterForYou() {
 }
 async function loadForYou() {
   if (S.loading) return;
+  if (!S.sites.length) { S.fy.error = 'No sites selected. Turn one on in the site picker, or add your own under Settings, Custom sites.'; render.endState(); return; }
   S.loading = true; S.fy.error = '';
   const gen = S.gen, signal = S.ctrl.signal;
   render.endState();
@@ -705,7 +705,12 @@ function ago(t) {
 function newSearch(remember = true) {
   setMode('search');
   commitTyped();
-  if (!S.sites.length) { toast('Turn on at least one site'); return; }
+  if (!S.sites.length) {
+    S.ctrl?.abort(); S.gen++; S.active = null; S.feeds = {}; S.posts = []; S.loading = false;
+    $('results').replaceChildren(el('div', 'err', 'No sites selected. Tap a site name in the site picker above to turn it on. Sites you hid are under the +N button; to add your own booru, open Settings and use "Custom sites".'));
+    render.sites(); render.status();
+    return;
+  }
   S.ctrl?.abort(); S.ctrl = new AbortController();
   S.gen++; S.fyNoShape = false;
   S.active = { sites: [...S.sites], base: buildBase() };
@@ -1597,7 +1602,7 @@ function renderSiteList() {
     cb.onchange = () => {
       S.hiddenSites = cb.checked ? S.hiddenSites.filter(x => x !== site) : [...new Set([...S.hiddenSites, site])];
       store.set('hiddenSites', S.hiddenSites);
-      if (!cb.checked && S.sites.includes(site)) { S.sites = S.sites.filter(x => x !== site); if (!S.sites.length) S.sites = ALL_SITES.filter(x => !S.hiddenSites.includes(x)).slice(0, 1); markDirty(); }
+      if (!cb.checked && S.sites.includes(site)) { S.sites = S.sites.filter(x => x !== site); markDirty(); }
       else render.sites();
     };
     lab.append(cb, ' ' + site); list.append(lab);
