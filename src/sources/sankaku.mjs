@@ -19,6 +19,8 @@ const ON_PAGES = typeof ServiceWorkerGlobalScope !== 'undefined';
 
 // Login token, kept in memory and tied to the login it came from.
 let token = null;
+let loginFailed = null; // { who, msg } after a rejected login, so the UI can warn instead of looking like guest access
+const LOGIN_MSG = 'Sankaku rejected your login, so searches are NOT using your account. Check SANKAKU_USERNAME and SANKAKU_PASSWORD (Settings, site keys).';
 async function login(env, fetchImpl) {
   const who = `${env.SANKAKU_USERNAME}\n${env.SANKAKU_PASSWORD}`;
   if (token?.who === who) return token.value;
@@ -27,7 +29,8 @@ async function login(env, fetchImpl) {
     body: JSON.stringify({ login: env.SANKAKU_USERNAME, password: env.SANKAKU_PASSWORD }), signal: AbortSignal.timeout(20000)
   });
   let data; try { data = await res.json(); } catch {}
-  if (!res.ok || !data?.success || !data.access_token) throw err('Sankaku rejected your login. Check SANKAKU_USERNAME and SANKAKU_PASSWORD in .dev.vars.', 401);
+  if (!res.ok || !data?.success || !data.access_token) { loginFailed = { who }; throw err(LOGIN_MSG, 401); }
+  loginFailed = null;
   token = { who, value: 'Bearer ' + data.access_token };
   return token.value;
 }
@@ -48,7 +51,8 @@ async function call(path, params, env, fetchImpl, retry = true) {
   const code = String(data?.code || '');
   if (res.status === 401 || /(unauthorized|invalid[-_]token)$/.test(code)) {
     if (token && retry) { token = null; return call(path, params, env, fetchImpl, false); }
-    throw err('Sankaku rejected your login. Check SANKAKU_USERNAME and SANKAKU_PASSWORD in .dev.vars.', 401);
+    loginFailed = { who: `${env.SANKAKU_USERNAME}\n${env.SANKAKU_PASSWORD}` };
+    throw err(LOGIN_MSG, 401);
   }
   if (!data) throw err(`Unexpected answer from Sankaku (${res.status})`, res.status === 403 ? 403 : 502);
   if (!res.ok || data?.success === false) throw err(`Sankaku: ${code.split('__').pop().replace(/[-_]/g, ' ') || res.status}`, res.status >= 500 ? 502 : 400);
@@ -144,6 +148,7 @@ export const sankaku = {
 
   configured() { return true; },
   auth(env) {
+    if (loginFailed?.who === `${env.SANKAKU_USERNAME}\n${env.SANKAKU_PASSWORD}`) return 'Login failed: ' + LOGIN_MSG;
     const who = env.SANKAKU_USERNAME && env.SANKAKU_PASSWORD ? `logged in as ${env.SANKAKU_USERNAME}` : 'public access (no login, some posts have no file)';
     return ON_PAGES ? who + '. Experimental in the web version, may not load: the local server is more reliable' : who;
   },

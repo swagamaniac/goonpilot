@@ -113,9 +113,12 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
       const p = url.searchParams;
       const sites = list(p.get('sites')).filter(id => SOURCES[id]?.configured(env));
       const rating = ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all';
-      const search = (id, q) => polite(id, () => SOURCES[id].search(q, env, fetchImpl), SOURCES[id].minGap);
+      let warn = '';
+      const search = (id, q) => polite(id, () => SOURCES[id].search(q, env, fetchImpl), SOURCES[id].minGap)
+        .catch(e => { if (e.status === 401) warn = `${id}: ${e.message}`; throw e; }); // a rejected login must not vanish into the other sites' results
       const exists = (id, names) => checkTags(SOURCES[id], names, env, fetchImpl);
-      return json(await fy.feed({ sites, rating, shape: ['portrait', 'landscape'].includes(p.get('shape')) ? p.get('shape') : 'any', n: int(p.get('n'), 10, 1, 25), search, exists }));
+      const out = await fy.feed({ sites, rating, shape: ['portrait', 'landscape'].includes(p.get('shape')) ? p.get('shape') : 'any', n: int(p.get('n'), 10, 1, 25), search, exists, sigExtra: ['ait', 'bl', 'blt', 'bls'].map(k => p.get(k) || '').join('') });
+      return json(warn ? { ...out, warn } : out);
     }
     if (request.method === 'POST') {
       const [b, err] = await readBody(request); if (err) return err;

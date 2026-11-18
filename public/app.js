@@ -522,7 +522,8 @@ async function loadForYou() {
       S.fyNoShape = true; S.fyTries = 0; S.loading = false; toast('No posts in that shape, showing all'); return loadForYou();
     }
     S.fyTries = 0;
-    if (got && res.note) toast(res.note);
+    if (res.warn) toast(res.warn);
+    else if (got && res.note) toast(res.note);
     if (!got) S.fy.error = res.why || 'Nothing new found right now. Try again in a moment.';
     S.fy.cold = !!res.cold;
   } catch (err) {
@@ -845,7 +846,7 @@ const render = {
       let state = g.note || (g.busy ? 'loading' : f.error ? 'error' : f.hasMore ? 'idle' : 'done');
       const pill = el('span', 'pill' + (g.note || f.error || (src && !src.configured) ? ' warn' : g.busy ? ' busy' : ''),
         `${site} · ${n}${f.hidden ? ` (+${f.hidden} hidden)` : ''} · ${state}`);
-      if (src) pill.title = src.auth;
+      if (src) { pill.title = src.auth; if (/^Login failed/.test(src.auth)) pill.classList.add('warn'); }
       s.append(pill);
     }
     const total = ALL_SITES.reduce((a, k) => a + gates[k].total, 0);
