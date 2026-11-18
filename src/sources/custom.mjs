@@ -7,6 +7,7 @@ export const CUSTOM_TYPES = { gelbooru: 'Gelbooru (like rule34)', shimmie: 'Shim
 
 const MAX_TAGS_LEN = 2000;
 const TYPE_BY_NUMBER = { 0: 'general', 1: 'artist', 3: 'copyright', 4: 'character', 5: 'meta' };
+const PLACEHOLDER_TARGET = 'bad_tag'; // alias target gelbooru uses for tags with no real replacement
 const isDeprecated = (t) => t === 6 || t === '6' || t === 'deprecated'; // gelbooru tag type 6
 const TYPE_BY_NAME = { artist: 'artist', character: 'character', copyright: 'copyright', metadata: 'meta' }; // gelbooru.com sends names
 const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
@@ -159,7 +160,7 @@ export function makeCustom({ id, label, base, type, envPrefix, userKey = 'USERNA
         const res = await fetchImpl(url, { headers: UA, signal: AbortSignal.timeout(20000) });
         const html = res.ok ? await res.text() : '', re = /tags=([^"]+)">[^<]*<\/a>\s*<span[^>]*>[^<]*<\/span>\s*<b>&rarr;<\/b>\s*<a href="[^"]*?tags=([^"]+)"/g;
         const dec = (s) => { try { return decodeURIComponent(decodeEntities(s)).toLowerCase(); } catch { return ''; } };
-        for (let m; (m = re.exec(html));) if (dec(m[1]) === name && dec(m[2])) { to = dec(m[2]); break; }
+        for (let m; (m = re.exec(html));) if (dec(m[1]) === name && dec(m[2])) { to = dec(m[2]) === PLACEHOLDER_TARGET ? null : dec(m[2]); break; } // the site's placeholder target means 'no replacement', never swap to it
       } catch {}
       return { deprecated: true, to };
     } } : {})
