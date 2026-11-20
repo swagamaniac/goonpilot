@@ -103,7 +103,7 @@ async function handleLib(request, url, artists, library = null) {
       if (request.method === 'POST') {
         const [b, err] = await readBody(request); if (err) return err;
         if (b.remove === true) { artists.remove(String(b.name)); return json({ ok: true }); }
-        return json({ artist: artists.set({ name: String(b.name), note: b.note, kind: b.kind }) });
+        return json({ artist: artists.set({ name: String(b.name), note: b.note, kind: b.kind, site: b.site }) });
       }
     }
     return json({ error: 'Not found' }, 404);

@@ -212,11 +212,11 @@ const artistKey = n => String(n || '').trim().toLowerCase().replace(/\s+/g, '_')
 function loadArtists() {
   return lib('artists').then(r => { S.artists = Object.fromEntries(r.artists.map(a => [a.name, a])); markFavs(); }).catch(() => {});
 }
-async function toggleArtist(name, kind = 'artist') {
+async function toggleArtist(name, kind = 'artist', site) {
   const k = artistKey(name);
   try {
     if (S.artists[k]) { await lib('artists', { name: k, remove: true }); delete S.artists[k]; toast('Removed ' + k + ' from favorites'); }
-    else { const r = await lib('artists', { name: k, kind }); S.artists[k] = r.artist; toast('Added ' + k + ' to favorites'); }
+    else { const r = await lib('artists', { name: k, kind, ...(site ? { site } : {}) }); S.artists[k] = r.artist; toast('Added ' + k + ' to favorites'); }
     markFavs(); if (!$('sheetRoot').hidden && tab === 'artists') renderSheet();
     if (S.vOpen) viewer.details();
   } catch (err) { toast(err.message); }
@@ -243,6 +243,11 @@ function trackNew(posts) {
     cur[p.site] = Math.max(cur[p.site] || 0, p.id);
   }
   store.set('seen', S.seen); pushUi('seen');
+}
+function addFav(name, kind) {
+  const site = S.artists[name]?.site;
+  if (site && ALL_SITES.includes(site)) { S.sites = [site]; syncFilterUi(); }
+  addTerm({ name }, '+', kind === 'tag' ? 'general' : kind);
 }
 function searchArtists(names, kind = 'artist') {
   S.terms = names.map(n => ({ kind: 'tag', name: n, mod: names.length > 1 ? '~' : '+', type: kind === 'tag' ? 'general' : kind }));
@@ -935,7 +940,7 @@ const render = {
       if (multi) meta.append(el('span', 'sitetag', p.site));
       const artist = p.tags.find(t => t.type === 'artist');
       meta.append(el('span', null, '▲ ' + p.score), el('span', 'r', p.rating));
-      if (artist) { const an = el('button', 'artistlink', (S.artists[artistKey(artist.name)] ? '♥ ' : '') + artist.name); an.dataset.artist = artist.name; an.title = 'Tap: add/remove favourite artist'; an.onclick = () => toggleArtist(artist.name); meta.append(an); }
+      if (artist) { const an = el('button', 'artistlink', (S.artists[artistKey(artist.name)] ? '♥ ' : '') + artist.name); an.dataset.artist = artist.name; an.title = 'Tap: add/remove favourite artist'; an.onclick = () => toggleArtist(artist.name, 'artist', p.site); meta.append(an); }
       if (p.date) { const sp = el('span', null, timeAgo(p.date)); sp.title = p.date.slice(0, 10) + '  #' + p.id; meta.append(sp); }
       const up = el('button', 'vbtn up fy-only', '👍'), dn = el('button', 'vbtn dn fy-only', '👎');
       const sup = el('button', 'vbtn sup fy-only', '⭐'), sdn = el('button', 'vbtn sdn fy-only', '⛔');
@@ -1537,7 +1542,8 @@ function renderArtists(body) {
     const list = el('div', 'list');
     for (const n of group) {
       const a = S.artists[n], it = el('div', 'item artist');
-      const g = el('button', 'grow'); g.append(el('div', 't', n)); g.onclick = () => searchArtists([n], k); g.title = 'Search this';
+      const g = el('button', 'grow'); g.append(el('div', 't', n)); g.onclick = () => addFav(n, k); g.title = 'Add to search' + (a.site ? ' (selects ' + a.site + ')' : '');
+      if (a.site) g.append(el('div', 'hint', a.site));
       const note = el('input'); note.className = 'fyinput note'; note.value = a.note || ''; note.placeholder = 'note…'; note.maxLength = 500;
       const saveNote = async () => { if (note.value === (a.note || '')) return; try { const r = await lib('artists', { name: n, note: note.value }); S.artists[n] = r.artist; toast('Note saved'); } catch (err) { toast(err.message); } };
       note.onblur = saveNote; note.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); note.blur(); } };
@@ -2051,7 +2057,7 @@ const viewer = {
         row.append(nb); if (cnt) row.append(cnt);
         if (type !== 'meta') {
           const fav = !!S.artists[artistKey(t.name)], heart = el('button', 'mini' + (fav ? ' on' : ''), fav ? '♥' : '♡');
-          heart.title = fav ? 'Remove from favorites' : 'Add to favorites'; heart.onclick = () => toggleArtist(t.name, type === 'artist' ? 'artist' : type === 'character' ? 'character' : 'tag'); row.append(heart);
+          heart.title = fav ? 'Remove from favorites' : 'Add to favorites'; heart.onclick = () => toggleArtist(t.name, type === 'artist' ? 'artist' : type === 'character' ? 'character' : 'tag', p.site); row.append(heart);
         }
         const bl = S.fyState?.prefs?.blacklist || [], blocked = bl.includes(t.name.toLowerCase());
         const never = el('button', 'mini' + (blocked ? ' on' : ''), '⛔'); never.title = blocked ? 'Already in Never show' : 'Never show posts with this tag (For you)'; never.setAttribute('aria-label', 'Never show ' + t.name);

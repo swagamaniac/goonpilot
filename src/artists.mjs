@@ -7,13 +7,14 @@ export function createArtists({ load, save, now = Date.now }) {
   const bad = (m) => Object.assign(new Error(m), { status: 400 });
   return {
     list() { return Object.values(get().artists).sort((a, b) => a.name.localeCompare(b.name)); },
-    set({ name, note, kind }) {
+    set({ name, note, kind, site }) {
       const k = artistKey(name);
       if (!k || k.length > 200 || /[:*]/.test(k) || k.startsWith('-') || k.startsWith('~')) throw bad('Bad artist tag');
       const a = get().artists;
       if (!a[k] && Object.keys(a).length >= MAX) throw bad('Too many artists');
       const cur = a[k] || { name: k, note: '', added: now(), kind: 'artist' };
       if (kind === 'artist' || kind === 'character' || kind === 'tag') cur.kind = kind;
+      if (typeof site === 'string' && /^[a-z0-9_-]{1,40}$/i.test(site)) cur.site = site; // optional; old entries have none
       if (typeof note === 'string') cur.note = note.slice(0, 500);
       a[k] = cur; save(get()); return cur;
     },
