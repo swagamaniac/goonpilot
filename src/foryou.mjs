@@ -500,6 +500,10 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       const runJob0 = async (site, q) => {
           q.include = [...new Set([...white.slice(0, 5), ...q.include])];
           q.shape = shape;
+          if (site === 'sankaku') { // For you only: Sankaku source caps tags (9 total, 2 rated, 2 of ~ *); tags it learns are rated are kept per profile (own key, no votes data touched)
+            q.forYou = true; q.rated = d.sankakuRated || [];
+            q.onRated = (name) => { const dd = get(); dd.sankakuRated = [...new Set([...(dd.sankakuRated || []), name])].slice(-300); persist(); };
+          }
           const msite = prefs.minScore?.[site]; if (msite > 0) q.minScore = Math.max(q.minScore || 0, msite + 1);
           // Same site + same search (tags, page, sort, filters, settings) that already ended with hasMore=false: skip, no request. Sankaku is excluded (its hasMore=false can just mean the page cursor is not known yet).
           const sig = site === 'sankaku' ? '' : JSON.stringify([site, q.include, q.exclude, q.or, q.orGroups, q.page, q.sort, q.minScore, q.rating, q.shape, q.limit, prefs.media, white, prefs.blacklist, sigExtra]);

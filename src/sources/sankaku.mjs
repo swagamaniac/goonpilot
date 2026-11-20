@@ -9,6 +9,16 @@ const H = { 'User-Agent': 'Goonpilot/1.0 (personal)', Accept: 'application/vnd.s
 
 const TAG_TYPES = { 0: 'general', 1: 'artist', 2: 'artist', 3: 'copyright', 4: 'character', 5: 'general', 8: 'meta', 9: 'meta' };
 const ORDER = ['artist', 'character', 'copyright', 'species', 'general', 'meta'];
+// Tag name -> 's' (G) | 'q' (R15+) | 'e' (R18+). Filled from tag objects that carry a `rating` field (unconfirmed for post lists and autosuggest) and
+// from For you queries the server rejected with _tags-explicit-limit (the tag dropped to fix it is remembered as 'q'). Memory only, resets on restart.
+const HEAVY = new Set(['dragon', 'scalie', 'furry', 'monster', 'mythological_scalie']); // probes: any two of these in one query give _tags-explicit-limit
+const tagRating = new Map([...HEAVY].map(t => [t, 'q']));
+function noteRating(t, name) {
+  // The tag object's own rating is the primary signal (e = R18+, q = R15+, s = G) and overrides the seeded and learned guesses; null/missing leaves them alone.
+  const r = typeof t?.rating === 'string' ? t.rating.trim().toLowerCase()[0] : '';
+  if (!r) return;
+  for (const nm of [name, t.tagName, t.name_en]) { const n = String(nm || '').toLowerCase().replace(/ /g, '_'); if (n) tagRating.set(n, r === 'g' ? 's' : r); }
+}
 const REF = /^sankaku:([0-9a-f]{32}):(file|sample|preview)$/;
 
 const cleanTag = (t) => String(t).trim().replace(/\s+/g, '_').slice(0, 200);
@@ -43,7 +53,7 @@ async function call(path, params, env, fetchImpl, retry = true, hdr = {}) {
   const res = await fetchImpl(url, { headers: h, signal: AbortSignal.timeout(20000) });
   const text = await res.text();
   if (res.status === 429) {
-    if (text.includes('_tags-explicit-limit')) throw err('Too many tags for Sankaku on this account: use fewer tags.', 400);
+    if (text.includes('_tags-explicit-limit')) throw Object.assign(err('Too many tags for Sankaku on this account: use fewer tags.', 400), { tagLimit: true });
     const reset = Number(res.headers.get('x-ratelimit-reset'));
     throw err(`Sankaku rate limit reached${reset > 1e9 ? `, try again after ${new Date(reset * 1000).toLocaleTimeString()}` : ''}`, 429);
   }
@@ -55,8 +65,8 @@ async function call(path, params, env, fetchImpl, retry = true, hdr = {}) {
     throw err(LOGIN_MSG, 401);
   }
   const opHint = res.status >= 500 && /(^|\s)(~|[^\s]*\*)/.test(params.tags || '') ? ' (too many ~ or * tags? try fewer)' : '';
-  if (!data) throw err(`Unexpected answer from Sankaku (${res.status})${opHint}`, res.status === 403 ? 403 : 502);
-  if (!res.ok || data?.success === false) throw err(`Sankaku: ${code.split('__').pop().replace(/[-_]/g, ' ') || res.status}${opHint}`, res.status >= 500 ? 502 : 400);
+  if (!data) throw Object.assign(err(`Unexpected answer from Sankaku (${res.status})${opHint}`, res.status === 403 ? 403 : 502), { http: res.status });
+  if (!res.ok || data?.success === false) throw Object.assign(err(`Sankaku: ${code.split('__').pop().replace(/[-_]/g, ' ') || res.status}${opHint}`, res.status >= 500 ? 502 : 400), { http: res.status });
   return data;
 }
 
@@ -115,7 +125,7 @@ function normalizePost(p) {
   const type = mime.startsWith('video/') || ['mp4', 'webm'].includes(ext) ? 'video' : ext === 'gif' ? 'gif' : 'image';
   // The typed `tags` objects may be a short excerpt; `tag_names` has the full list, so the rest come in as general.
   const typed = (Array.isArray(p.tags) ? p.tags : []).filter(t => t && typeof t === 'object')
-    .map(t => ({ name: t.name_en || t.name || t.tagName, type: TAG_TYPES[t.type] || 'general', count: Number(t.post_count ?? t.count) || 0 }));
+    .map(t => (noteRating(t, t.name_en || t.name || t.tagName), t)).map(t => ({ name: t.name_en || t.name || t.tagName, type: TAG_TYPES[t.type] || 'general', count: Number(t.post_count ?? t.count) || 0 }));
   const seen = new Map();
   for (const t of [...typed, ...(p.tag_names || []).map(name => ({ name, type: 'general', count: 0 }))]) {
     const name = String(t.name || '').toLowerCase().replace(/ /g, '_');
@@ -141,7 +151,7 @@ function normalizePost(p) {
 // Outgoing-request rewrite only: plain 'audio'/'sound' mean Sankaku's has_audio tag.
 const sankakuTerm = (t) => { const c = cleanTag(t); return /^(audio|sound)$/i.test(c) ? 'has_audio' : c; };
 
-function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all' }) {
+function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all', forYou = false }, level = 0) {
   const parts = [...include.map(sankakuTerm), ...exclude.map(t => '-' + sankakuTerm(t))].filter(t => t && t !== '-');
   const groups = [or, ...orGroups].map(g => g.map(sankakuTerm).filter(Boolean)).filter(g => g.length);
   for (const g of groups) parts.push(...(g.length > 1 ? g.map(t => '~' + t) : g));
@@ -150,6 +160,24 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   let plain = 0, tildes = 0;
   const kept = parts.filter(t => (t[0] === '~' ? ++tildes <= 2 : /^-|\*/.test(t) ? true : ++plain <= 7));
   if (kept.length < parts.length) console.log(`  [sankaku] over the tag limit (7 plain, 2 ~): dropped ${parts.filter(t => !kept.includes(t)).join(' ')}`);
+  // For you only: at most 2 ~ or * tags combined (- excludes are not counted: 5 of them worked on the site), to stay clear of Sankaku's server errors.
+  // Fallback levels (used by search() after a 500): 1 = no - excludes, 2 = also no ~ or * tags.
+  if (forYou) {
+    let ops = 0;
+    let capped = kept.filter(t => level >= 2 && /^~|\*/.test(t) ? false : level >= 1 && t[0] === '-' ? false : (/^~|\*/.test(t) ? ++ops <= 2 : true));
+    // Free account: 9 tags in total, and at most 2 of them R15+/R18+ rated (else 429 _tags-explicit-limit). Plain tags known (or learned) to be rated go last and only 2 are kept;
+    // operators and colon tags are unrated but count toward the 9. Anything past 9 is dropped from the end (ors, then excludes).
+    // Probe: rated tags count in excludes too (`piledriver -dragon -scalie` fails), so - and ~ tags are checked by their bare name; plain tags (own search) take the 2 slots first.
+    const isPlain = t => !/^[~-]|\*|:/.test(t), rated = t => !/\*|:/.test(t) && /^[qe]$/.test(tagRating.get(t.replace(/^[~-]/, '').toLowerCase()) || '');
+    // Probe: any two of the heavy tags fail together, so only the first one (own search first) is kept per query.
+    let heavy = 0; capped = capped.filter(t => !HEAVY.has(t.replace(/^[~-]/, '').toLowerCase()) || ++heavy <= 1);
+    let nr = 0; const plains = capped.filter(isPlain);
+    capped = [...plains.filter(t => !rated(t)), ...plains.filter(rated).filter(() => ++nr <= 2), ...capped.filter(t => !isPlain(t)).filter(t => !rated(t) || ++nr <= 2)].slice(0, 9);
+    // Level 3+: also drop plain tags from the end, one more per level, always keeping the first one.
+    for (let n = level - 2, i = capped.length - 1; n > 0 && i > 0; i--) if (!/^[~-]|\*/.test(capped[i])) { capped.splice(i, 1); n--; }
+    if (capped.length < kept.length) console.log(`  [sankaku] For you ${level ? `fallback ${level}` : 'operand cap (2 of ~ *)'}: dropped ${kept.filter(t => !capped.includes(t)).join(' ')}`);
+    kept.splice(0, kept.length, ...capped);
+  }
   parts.splice(0, parts.length, ...kept);
   if (sort === 'score') parts.push('order:quality');
   else if (sort === 'popular') parts.push('order:popularity');
@@ -213,6 +241,7 @@ export const sankaku = {
   async search(q, env, fetchImpl = fetch) {
     // Sankaku For you (read-only, nothing is sent back): 'feed' = the site's For You feed, tags and excludes still apply like on the site;
     // 'user' = the recommended_for:<username> tag (a separate, favs/votes-based recommender).
+    if (q.forYou) for (const n of q.rated || []) if (!tagRating.has(n)) tagRating.set(n, 'q'); // learned list kept per profile by For you
     const base = buildTags(q), forUser = q.recommend === 'user' && env.SANKAKU_USERNAME && !/(^|\s)recommended_for/.test(base) ? `recommended_for:${cleanTag(env.SANKAKU_USERNAME)}` : '';
     const tags = [forUser, base].filter(Boolean).join(' '), rec = q.recommend === 'feed', key = `${rec ? 'rec|' : ''}${tags}|${q.limit}`;
     let c = cursors.get(key);
@@ -223,9 +252,27 @@ export const sankaku = {
     for (let page = start; page <= want; page++) {
       if (page > 0 && !c[page]) return { posts: [], hasMore: false };
       if (page > start) await sleep(1000);
-      console.log(`  [sankaku] page ${page}  ${rec ? 'for you ' : ''}tags: ${tags || '(none)'}`);
-      // Same extra parameters the site's own search sends (default_threshold 2, hide_posts_in_books in-larger-tags); Settings can lower the threshold to 0 and hide book pages always. pool:/fav: searches skip the book filter.
-      data = await call('/v2/posts/keyset', { limit: String(q.limit), ...(tags ? { tags } : {}), ...(rec ? { is_recommendation: 'true', page: String(page + 1) } : {}), default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tags) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] && c[page] !== '-' ? { next: c[page] } : {}) }, env, fetchImpl, true, rec ? { 'X-Sankaku-Capabilities': 'recommendation-context-v2' } : {});
+      let failedTg = null;
+      for (;;) {
+        // For you only: after a 500 the same search is retried with fewer operands (level 1: no - excludes, level 2: also no ~ or *); the level sticks for this search's later pages.
+        const lv = c.level || 0, tg = lv ? [forUser, buildTags(q, lv)].filter(Boolean).join(' ') : tags;
+        console.log(`  [sankaku] page ${page}  ${rec ? 'for you ' : ''}tags: ${tg || '(none)'}`);
+        try {
+          // Same extra parameters the site's own search sends (default_threshold 2, hide_posts_in_books in-larger-tags); Settings can lower the threshold to 0 and hide book pages always. pool:/fav: searches skip the book filter.
+          data = await call('/v2/posts/keyset', { limit: String(q.limit), ...(tg ? { tags: tg } : {}), ...(rec ? { is_recommendation: 'true', page: String(page + 1) } : {}), default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tg) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] && c[page] !== '-' ? { next: c[page] } : {}) }, env, fetchImpl, true, rec ? { 'X-Sankaku-Capabilities': 'recommendation-context-v2' } : {});
+          // A plain tag dropped by the step that fixed a tag-limit rejection is probably a rated one: remember it so later For you queries put it last / skip it.
+          if (failedTg) for (const t of failedTg.split(' ')) if (!tg.split(' ').includes(t) && !/^[~-]|\*|:/.test(t) && !tagRating.has(t.toLowerCase())) { tagRating.set(t.toLowerCase(), 'q'); q.onRated?.(t.toLowerCase()); console.log(`  [sankaku] learned as rated: ${t}`); }
+          break;
+        } catch (e) {
+          if (e.tagLimit) failedTg = tg;
+          if (!q.forYou || !(e.http >= 500 || e.tagLimit)) throw e;
+          // Step down: no - excludes, then no ~/*, then one fewer plain tag per step. Steps that would send the same tags are skipped.
+          let next = lv, nt = tg;
+          while (nt === tg && next < 14) { next++; nt = [forUser, buildTags(q, next)].filter(Boolean).join(' '); }
+          if (nt === tg) throw e;
+          c.level = next; console.log(`  [sankaku] For you query rejected (${e.tagLimit ? 'tag limit' : e.http}), retrying with fewer tags (level ${next})`);
+        }
+      }
       // The For You feed can end its cursor while more pages exist; the site keeps going as long as a page has posts ('-' = page number only).
       c[page + 1] = data?.meta?.next || (rec && data?.data?.length ? '-' : '');
     }
@@ -236,6 +283,13 @@ export const sankaku = {
     let posts = raw.filter(p => p && p.id && p.file_url && /^[0-9a-f]{32}$/i.test(p.md5 || '')).map(normalizePost);
     const hidden = raw.length - posts.length;
     console.log(`  [sankaku] kept ${posts.length}/${raw.length}${hidden ? ` (dropped: ${raw.filter(p => !p?.id).length} no id, ${raw.filter(p => !/^[0-9a-f]{32}$/i.test(p?.md5 || '')).length} bad md5, e.g. md5=${JSON.stringify(String(raw.find(p => !/^[0-9a-f]{32}$/i.test(p?.md5 || ''))?.md5 ?? 'none').slice(0, 40))})` : ''}`);
+    // After a fallback the dropped - excludes are applied here instead, so blocked tags don't leak through.
+    if (q.forYou && q.exclude?.length) {
+      const res = q.exclude.map(sankakuTerm).filter(Boolean).map(t => new RegExp('^' + t.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'));
+      const before = posts.length;
+      posts = posts.filter(p => !(p.tags || []).some(t => res.some(r => r.test(String(t.name ?? t).toLowerCase()))));
+      if (posts.length < before) console.log(`  [sankaku] fallback: ${before - posts.length} posts removed client-side by excludes`);
+    }
     if (q.shape === 'portrait') posts = posts.filter(p => p.w / p.h < 1.12);
     else if (q.shape === 'landscape') posts = posts.filter(p => p.w / p.h >= 1.12);
     // Guard: stop after 3 pages in a row that leave nothing to show, so a broken filter can't page through the whole site.
@@ -251,6 +305,7 @@ export const sankaku = {
     let data;
     try { data = await call('/tags/autosuggestCreating', { tag: term }, env, fetchImpl); } catch (e) { if (e.status === 429 || e.status === 401) throw e; return []; }
     const list = Array.isArray(data) ? data : data?.data || [];
+    list.slice(0, 10).forEach(t => noteRating(t, t.name_en || t.name || t.tagName));
     return list.slice(0, 10).map(t => ({ name: String(t.name_en || t.name || t.tagName || '').toLowerCase().replace(/ /g, '_'), count: Number(t.post_count ?? t.count) || 0, type: TAG_TYPES[t.type] || 'general' })).filter(t => t.name);
   }
 };
