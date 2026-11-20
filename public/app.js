@@ -2028,10 +2028,7 @@ function renderBlocklist() {
   const inp = el('input', 'fyinput'); inp.placeholder = 'tag to block'; inp.setAttribute('aria-label', 'Tag to block');
   inp.onkeydown = ev => {
     ev.stopPropagation(); if (ev.key !== 'Enter') return; ev.preventDefault();
-    const t = inp.value.trim().toLowerCase().replace(/^-+/, '').replace(/\s+/g, '_'); if (!t) return;
-    if (S.blockTags.includes(t)) { toast('Already in your list'); return; }
-    const by = blockedCoveredBy(t); if (by) toast(`Already blocked by ${by}`);
-    saveOwn([...S.blockTags, t]);
+    addBlockTag(inp.value);
   };
   d.append(own, inp);
   d.append(el('p', 'hint', 'Blocked tags count towards the search tag limit on sites like Danbooru and Sankaku. Skip the blocklist there if searches start failing.'));
@@ -2095,6 +2092,24 @@ function tagListEditor(title, key, placeholder, s, after) {
   const save = async arr => { if (await setPrefs({ [key]: arr })) (after || renderSheet)(); };
   s.prefs[key].forEach(t => { const c = el('span', null, t); const x = el('button', null, '×'); x.onclick = () => save(s.prefs[key].filter(y => y !== t)); c.append(x); list.append(c); });
   const inp = el('input'); inp.placeholder = placeholder; inp.className = 'fyinput';
+// Adds one tag to your own blocklist (shared by Settings > Blocklist and the quick field in the header). Returns true if added.
+function addBlockTag(raw) {
+  const t = String(raw).trim().toLowerCase().replace(/^-+/, '').replace(/\s+/g, '_'); if (!t) return false;
+  if (S.blockTags.includes(t)) { toast('Already in your list'); return false; }
+  const by = blockedCoveredBy(t); if (by) toast(`Already blocked by ${by}`);
+  S.blockTags = [...S.blockTags, t]; store.set('blockTags', S.blockTags); markDirty(); renderSheet();
+  return true;
+}
+// Quick blocklist in the header: a button toggles a single "tag to block" field.
+{
+  const btn = $('blockBtn'), inp = $('blockIn');
+  btn.onclick = () => { const show = inp.hidden; inp.hidden = !show; btn.setAttribute('aria-expanded', show); if (show) inp.focus(); };
+  inp.onkeydown = ev => {
+    ev.stopPropagation();
+    if (ev.key === 'Escape') { inp.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); if (addBlockTag(inp.value)) inp.value = ''; }
+  };
+}
   inp.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); const v = inp.value.trim(); if (v) save([...s.prefs[key], v]); } };
   wrap.append(list, inp); return wrap;
 }

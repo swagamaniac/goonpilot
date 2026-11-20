@@ -276,6 +276,8 @@ body.fy-on #profileSel { display: inline-block; }
 .profrow .mini { padding: 2px 8px; height: auto; }
 
 .fydrop { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.blockquick { height: 38px; width: 150px; max-width: 40vw; }
+.tabs #profileSel { flex: none; height: 32px; }
 .fydrop > summary { cursor: pointer; padding: 10px 12px; font-weight: 600; font-size: 15px; }
 .fydrop > .fybox { border: 0; padding: 0 12px 12px; gap: 10px; }
 

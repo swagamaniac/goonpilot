@@ -21,7 +21,8 @@
     </div>
     <button class="btn searchbtn" id="searchBtn" title="Search (Enter)">Search</button>
     <button class="btn forbtn" id="forBtn" title="Recommendations based on your likes (beta)" hidden>✦ For you <small>beta</small></button>
-    <select class="fy-only" id="profileSel" title="For you profile (each has its own likes and dislikes)" aria-label="For you profile"></select>
+    <button class="iconbtn" id="blockBtn" title="Block a tag (show or hide the field)" aria-label="Block a tag" aria-expanded="false">⊘</button>
+    <input class="fyinput blockquick" id="blockIn" hidden placeholder="tag to block, Enter" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Tag to block">
     <button class="btn ghost fy-only likedbtn" id="likedBtn" title="Posts you voted on">♥ Liked</button>
     <button class="iconbtn" id="setBtn" title="Settings" aria-label="Settings">⚙</button>
   </div>
@@ -91,7 +92,7 @@
 <div id="sheetRoot" hidden>
   <div class="sheet-bg" id="sheetBg"></div>
   <section class="sheet" role="dialog" aria-label="Library and settings">
-    <div class="tabs"><button data-tab="artists" class="on">Favorites</button><button data-tab="fy">For you</button><button data-tab="hotkeys">Hotkeys</button><button data-tab="settings">Settings</button><button type="button" class="iconbtn sheetx" id="sheetX" title="Close" aria-label="Close">✕</button></div>
+    <div class="tabs"><button data-tab="artists" class="on">Favorites</button><button data-tab="fy">For you</button><button data-tab="hotkeys">Hotkeys</button><button data-tab="settings">Settings</button><select class="fy-only" id="profileSel" title="For you profile (each has its own likes and dislikes)" aria-label="For you profile"></select><button type="button" class="iconbtn sheetx" id="sheetX" title="Close" aria-label="Close">✕</button></div>
     <div id="sheetBody"></div>
   </section>
 </div>
