@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
+const PREFS = ['aheadScreens', 'infinite', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -101,6 +101,7 @@ const S = {
   sort: st.sort || 'id', rating: st.rating || 'all', minScore: st.minScore || 0, scoreMax: !!st.scoreMax,
   pageSize: store.get('pageSize', 20),
   aheadScreens: store.get('aheadScreens', 3),
+  infinite: store.get('infinite', true),
   original: store.get('original', false),
   autoDelay: store.get('autoDelay', 5),
   videoQuality: store.get('videoQuality', 'medium'),
@@ -116,7 +117,7 @@ const S = {
   vIndex: 0, vOpen: false, auto: false,
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
-  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
+  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', nextPage: 'n', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
   hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
@@ -583,7 +584,7 @@ function advanceFrom(p) {
     if (v && !v.loop && !v.ended) { viewer.waitNext = p; return; }
     viewer.step(1, true); return;
   }
-  const card = $('results').children[i + 1]; if (!card) { if (S.mode === 'foryou') loadMore(); return; }
+  const card = $('results').children[i + 1]; if (!card) { if (S.mode === 'foryou' && S.infinite) loadMore(); return; }
   hoverLockUntil = Date.now() + 900; hovered.p = S.posts[i + 1];
   card.scrollIntoView({ block: 'center', behavior: 'instant' });
 }
@@ -665,8 +666,8 @@ $('results').addEventListener('mouseover', e => {
   const c = e.target.closest?.('.post'); hovered.p = c ? S.posts[+c.dataset.i] : null;
 });
 $('results').addEventListener('mouseleave', () => { hovered.p = null; });
-const HK_LABEL = { like: 'Like', dislike: 'Dislike', superLike: 'Super like', superDislike: 'Super dislike', hints: 'Show / hide the hotkey bar', next: 'Next post (fullscreen)', prev: 'Previous post (fullscreen)', details: 'Details panel (fullscreen)', close: 'Close fullscreen', search: 'Search' };
-const HK_DEFAULT = { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter' };
+const HK_LABEL = { like: 'Like', dislike: 'Dislike', superLike: 'Super like', superDislike: 'Super dislike', hints: 'Show / hide the hotkey bar', next: 'Next post (fullscreen)', prev: 'Previous post (fullscreen)', details: 'Details panel (fullscreen)', close: 'Close fullscreen', search: 'Search', nextPage: 'Next page (infinite scroll off)' };
+const HK_DEFAULT = { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', nextPage: 'n' };
 const HK_VALUE = { like: 1, dislike: -1, superLike: 2, superDislike: -2 };
 const HK_FIXED = [['↓ / ↑', 'Also next / previous post (fullscreen)'], ['←', 'Also details panel (fullscreen)']];
 const HK_NAME = { arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→', escape: 'Esc', enter: 'Enter', backspace: 'Backspace', delete: 'Del', home: 'Home', end: 'End', pageup: 'PgUp', pagedown: 'PgDn' };
@@ -689,6 +690,7 @@ document.addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select') || !$('sheetRoot').hidden) return;
   const act = hkAction(e.key.toLowerCase()); if (!act) return;
   if (act === 'hints') { if (S.fyOn) { e.preventDefault(); setHints(!S.hintsOn); } return; }
+  if (act === 'nextPage') { if (!S.infinite) { e.preventDefault(); nextPage(); } return; }
   if (!S.fyOn || !(act in HK_VALUE)) return;
   const p = S.vOpen ? S.posts[S.vIndex] : hovered.p;
   if (!p) return;
@@ -820,6 +822,20 @@ async function loadMore() {
   render.endState(); render.status();
   requestAnimationFrame(() => { if (sentinelNear()) loadMore(); });
 }
+
+function canLoadMore() {
+  if (!S.active || S.loading) return false;
+  if (S.mode === 'liked') return !S.liked.done && !S.liked.error;
+  if (S.mode === 'foryou') return !S.fy.error;
+  return S.active.sites.some(s => S.feeds[s].hasMore && !S.feeds[s].error);
+}
+async function nextPage() {
+  if (!canLoadMore()) return;
+  const from = S.posts.length;
+  await loadMore();
+  if (!S.vOpen) $('results').children[from]?.scrollIntoView({ block: 'start' });
+}
+function nextBtn() { const b = el('button', 'btn', 'Next page'); b.title = 'Hotkey: ' + keyName(S.hk.nextPage); b.onclick = nextPage; return b; }
 
 const HOW = { anchor: 'searched your top tags', pivot: 'searched a top tag plus a mid-ranked one', reach: 'searched a tag from further down your list', wildcard: 'random-order search on one of your tags', popular: 'popular starter search (no taste data yet)', dive: 'Deep Dive search' };
 function dbgLine(d) {
@@ -981,6 +997,7 @@ const render = {
       if (L.error) { end.append(el('div', 'err', L.error)); const r = el('button', 'btn', 'Try again'); r.onclick = () => { L.error = ''; loadMore(); }; end.append(r); }
       else if (S.loading) end.append(el('div', null, S.posts.length ? 'Loading…' : 'Loading your votes…'));
       else if (L.done) end.append(el('div', null, S.posts.length ? `End · ${S.posts.length} posts${L.unavailable ? ` (${L.unavailable} no longer available or not loaded)` : ''}` : 'Nothing here yet. Vote on some posts first.'));
+      else if (!S.infinite && S.posts.length) end.append(nextBtn());
       else end.hidden = true;
       return;
     }
@@ -989,6 +1006,7 @@ const render = {
         end.append(el('div', 'err', S.fy.error));
         const r = el('button', 'btn', 'Try again'); r.onclick = () => { S.fy.error = ''; loadMore(); }; end.append(r);
       } else if (S.loading) end.append(el('div', null, S.posts.length ? 'Loading…' : 'Finding posts for you…'));
+      else if (!S.infinite && S.posts.length) end.append(nextBtn());
       else end.hidden = true;
       return;
     }
@@ -1010,6 +1028,7 @@ const render = {
     const live = S.active.sites.some(s => S.feeds[s].hasMore && !S.feeds[s].error);
     if (S.loading) end.append(el('div', null, 'Loading…'));
     else if (!live && !errs.length) end.append(el('div', null, S.posts.length ? `End of results · ${S.posts.length} posts` : 'No results'));
+    else if (!S.infinite && live && !errs.length && S.posts.length) end.append(nextBtn());
     else if (!errs.length && !S.active.sites.some(x => S.feeds[x].missing?.length)) end.hidden = true;
   }
 };
@@ -1129,6 +1148,7 @@ document.addEventListener('keydown', e => {
 
 let sentinelVisible = false, sentinelObs;
 function sentinelNear() {
+  if (!S.infinite) return false;
   const margin = window.innerHeight * S.aheadScreens;
   return $('sentinel').getBoundingClientRect().top < window.innerHeight + margin;
 }
@@ -1137,7 +1157,7 @@ function watchTail() {
   tailObs?.disconnect(); tailObs = null;
   if (!TOUCH.matches || S.mode === 'liked') return;
   const cards = $('results').children, c = cards[Math.max(0, cards.length - 10)]; if (!c) return;
-  tailObs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { tailObs.disconnect(); loadMore(); } });
+  tailObs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { tailObs.disconnect(); if (S.infinite) loadMore(); } });
   tailObs.observe(c);
 }
 async function showNew(from, gen) {
@@ -1156,7 +1176,7 @@ async function showNew(from, gen) {
 }
 function observeSentinel() {
   sentinelObs?.disconnect(); sentinelVisible = false;
-  sentinelObs = new IntersectionObserver(([e]) => { sentinelVisible = e.isIntersecting; if (sentinelVisible) loadMore(); },
+  sentinelObs = new IntersectionObserver(([e]) => { sentinelVisible = e.isIntersecting; if (sentinelVisible && S.infinite) loadMore(); },
     { rootMargin: `${Math.round(window.innerHeight * S.aheadScreens)}px 0px` });
   sentinelObs.observe($('sentinel'));
 }
@@ -1406,6 +1426,8 @@ function renderSheetBody() {
     body.append(group('Feed',
       segField('Posts per request (per site)', [10, 20, 50, 100], S.pageSize, String, v => { S.pageSize = v; store.set('pageSize', v); markDirty(); }),
       el('p', 'hint', 'Applies from your next search.'),
+      segField('Infinite scroll', [true, false], S.infinite, v => v ? 'On' : 'Off', v => { S.infinite = v; store.set('infinite', v); observeSentinel(); render.endState(); }),
+      el('p', 'hint', 'Off: more results only load when you press the Next page button under the feed or its hotkey (N by default, change it under Hotkeys in the For you tab). Works in fullscreen too.'),
       segField('Start loading more', [1, 2, 3, 5], S.aheadScreens, v => v + (v === 1 ? ' screen' : ' screens'), v => { S.aheadScreens = v; store.set('aheadScreens', v); observeSentinel(); }),
       el('p', 'hint', 'How far before the bottom of the feed the next page is requested. In fullscreen it loads when 5 posts remain.'),
       segField('Duplicate posts (same file, e.g. on two sites)', [false, true], S.dupes, v => v ? 'Show' : 'Hide', v => { S.dupes = v; store.set('dupes', v); markDirty(); }),
@@ -2171,7 +2193,7 @@ const viewer = {
     window.updFill?.();
     clearTimeout(this.viewT); const cur = S.posts[S.vIndex];
     if (S.fyOn && S.mode === 'foryou' && cur) this.viewT = setTimeout(() => reportViewed(cur), 1500);
-    if (S.vIndex >= S.posts.length - (TOUCH.matches ? 10 : S.mode === 'foryou' ? 2 : 6)) loadMore();
+    if (S.vIndex >= S.posts.length - (TOUCH.matches ? 10 : S.mode === 'foryou' ? 2 : 6) && S.infinite) loadMore();
     render.endState();
     if (S.auto) this.scheduleAuto();
   },
