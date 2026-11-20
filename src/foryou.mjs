@@ -226,6 +226,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
     let votes = Object.values(d.votes);
     if (scope === 'paheal-own') votes = votes.filter(v => v.site === 'paheal');
     else if (scope === 'paheal-all' && shared) votes = [...votes, ...shared.votes()];
+    if (d.prefs.skLikes === false) votes = votes.filter(v => !(v.site === 'sankaku' && v.vote > 0)); // setting: Sankaku likes stay saved but don't teach the profile
     forPaheal = forPaheal || scope !== 'normal';
     for (const v of votes) {
       if (!forPaheal && v.site === 'paheal') continue;
@@ -392,6 +393,9 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       prune(); persist(); return true;
     },
 
+    hasVote(site, id) { return !!get().votes[postKey(site, id)]; },
+    backupNow(label) { get(); backup(label); },
+
     listVotes({ filter = 'likes', offset = 0, limit = 20 }) {
       const pick = { likes: v => v > 0, super: v => v === 2, dislikes: v => v < 0, all: () => true }[filter] || (v => v > 0);
       const all = Object.values(get().votes).filter(v => pick(v.vote)).sort((a, b) => b.t - a.t);
@@ -409,6 +413,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       if (typeof b.ignoreCopyright === 'boolean') p.ignoreCopyright = b.ignoreCopyright;
       if (typeof b.ignoreArtists === 'boolean') p.ignoreArtists = b.ignoreArtists;
       if (typeof b.ignoreSpecies === 'boolean') p.ignoreSpecies = b.ignoreSpecies;
+      if (typeof b.skLikes === 'boolean') p.skLikes = b.skLikes;
       if (b.boost && typeof b.boost === 'object' && !Array.isArray(b.boost)) {
         const out = {};
         for (const [k, v] of Object.entries(b.boost).slice(0, 200)) {

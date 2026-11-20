@@ -456,6 +456,8 @@ function renderIgnorePanel(p) {
   for (const [key, label] of [['ignoreArtists', '🎨 Artists'], ['ignoreCopyright', '© Series (copyright)'], ['ignoreCharacters', '👤 Characters'], ['ignoreSpecies', '🐾 Species']]) {
     p.append(segField(label, [true, false], !!pr[key], v => v ? 'Ignored' : 'Used', async v => { if (await setPrefs({ [key]: v })) { fyPanelDirty = true; await loadFyState(); } }));
   }
+  p.append(segField('Sankaku likes', [true, false], pr.skLikes !== false, v => v ? 'Count' : 'Ignored', async v => { if (await setPrefs({ skLikes: v })) { fyPanelDirty = true; await loadFyState(); } }));
+  p.append(el('p', 'hint', 'Ignored: likes on Sankaku posts stay saved (and synced to your Sankaku favorites) but are not learned from.'));
 }
 function renderTaste(p) {
   const s = S.fyState, cols = el('div', 'tastecols');
@@ -1878,6 +1880,42 @@ function renderSiteList() {
   sfb.onchange = () => { S.skFav = sfb.checked; store.set('skFav', S.skFav); };
   sf.append(sfb, ' Sankaku: sync likes to your Sankaku favorites');
   d.append(sf, el('p', 'hint', 'Liking a Sankaku post adds it to your Sankaku favorites; removing the like (or disliking a liked post) removes it. Only that one post, only Sankaku, nothing else is sent. Past likes are not synced.'));
+  const imp = el('button', null, 'Import my Sankaku favorites as likes');
+  imp.onclick = async () => {
+    if (imp.disabled) return;
+    if (!confirm('Import your Sankaku favorites as likes in Goonpilot?\n\nOnly posts you have not voted on yet are added. Existing likes and dislikes are not changed, and a backup of your votes is made first. Reads your favorites page by page (slow on purpose).')) return;
+    imp.disabled = true; let added = 0, seen = 0;
+    try {
+      for (let page = 0; ; page++) {
+        const r = await fyJson('import-sankaku-favs', { page });
+        added += r.added; seen += r.added + r.existing;
+        imp.textContent = `Importing... page ${page + 1}, ${added} added`;
+        if (!r.hasMore) break;
+        await sleep(1500);
+      }
+      toast(`Sankaku import done: ${added} added, ${seen - added} already had a vote`);
+    } catch (e) { toast('Sankaku import stopped: ' + (e.message || 'failed') + (added ? ` (${added} added so far)` : '')); }
+    imp.disabled = false; imp.textContent = 'Import my Sankaku favorites as likes';
+    await loadFyState();
+  };
+  const exp = el('button', null, 'Send my existing Sankaku likes to my Sankaku favorites');
+  exp.onclick = async () => {
+    if (exp.disabled) return;
+    if (!confirm('Add all the Sankaku posts you liked here to your Sankaku favorites?\n\nThis sends those posts to your Sankaku account (one request each, slow on purpose). Nothing changes locally. Likes without a saved post link are skipped.')) return;
+    exp.disabled = true; let sent = 0, skipped = 0, failed = 0, already = 0;
+    try {
+      for (let off = 0; ;) {
+        const r = await fyJson('export-sankaku-likes', { offset: off });
+        sent += r.sent; already += r.already; skipped += r.skipped; failed += r.failed; off = r.next;
+        exp.textContent = `Sending... ${Math.min(off, r.total)} / ${r.total}`;
+        if (r.done) break;
+      }
+      toast(`Sent to Sankaku favorites: ${sent}, already sent ${already}, skipped (no link) ${skipped}, failed ${failed}`);
+    } catch (e) { toast('Sankaku export stopped: ' + (e.message || 'failed') + ` (${sent} sent so far)`); }
+    exp.disabled = false; exp.textContent = 'Send my existing Sankaku likes to my Sankaku favorites';
+  };
+  d.append(exp, el('p', 'hint', 'Manual and optional. Sends your already-liked Sankaku posts to your Sankaku favorites; nothing else leaves your PC.'));
+  d.append(imp, el('p', 'hint', 'Manual, one time as often as you like. Imported favorites count as likes for For you (unless "Sankaku likes" is set to Ignored). Posts without a file on Sankaku are skipped.'));
   if (!S.blocked['AI-generated']) {
     const ai = el('label'), acb = el('input'); acb.type = 'checkbox'; acb.checked = S.aiTagFix;
     acb.onchange = () => { S.aiTagFix = acb.checked; store.set('aiTagFix', S.aiTagFix); markDirty(); };

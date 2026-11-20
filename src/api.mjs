@@ -120,6 +120,12 @@ async function handleLib(request, url, artists, library = null) {
   } catch (e) { return json({ error: e.message || 'Failed' }, e.status === 400 ? 400 : 502); }
 }
 
+// Sankaku favorites we already sent (Sankaku post ids, data/sankaku-sent.json), so the bulk send skips them. Never touches votes.
+let skSentCtx = null, skSentSet = null;
+function skSent() { if (!skSentCtx) return null; if (!skSentSet) { const d = skSentCtx.load(); skSentSet = new Set(Array.isArray(d?.ids) ? d.ids : []); } return skSentSet; }
+function skSentMark(id, on) { const s = skSent(); if (!s || !id || on === s.has(id)) return; on ? s.add(id) : s.delete(id); skSentCtx.save({ v: 1, ids: [...s] }); }
+const skIdOf = (link) => (/^https:\/\/chan\.sankakucomplex\.com\/posts\/([A-Za-z0-9]+)$/.exec(String(link || '')) || [])[1] || '';
+
 async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, vision = null, library = null) {
   if (!fy) return json({ error: 'For you is not available' }, 404);
   const bad = guardPrivate(request, url); if (bad) return bad;
@@ -156,10 +162,46 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
           if (m) {
             const on = vote > 0;
             polite('sankaku', () => SOURCES.sankaku.favorite(m[1], on, env, fetchImpl), SOURCES.sankaku.minGap)
+              .then(() => skSentMark(m[1], on))
               .catch(e => console.log(`  [sankaku] favorite ${on ? 'add' : 'remove'} failed: ${e.message}`));
           }
         }
         return json({ vote });
+      }
+      if (route === 'import-sankaku-favs') {
+        // Manual import, one page per call (the client loops gently): the account's Sankaku favorites become likes here, only for posts
+        // with no vote yet. Existing likes/dislikes are never changed. Read-only towards Sankaku; goes through vote(), so the For you
+        // "Sankaku likes" toggle applies and the favorite sync is not triggered.
+        const user = env.SANKAKU_USERNAME;
+        if (!user || !env.SANKAKU_PASSWORD) return json({ error: 'Log in to Sankaku first (Settings, site keys)' }, 400);
+        const page = int(b.page, 0, 0, 5000);
+        if (page === 0) fy.backupNow('before-sankaku-import');
+        const r = await polite('sankaku', () => SOURCES.sankaku.search({ include: ['fav:' + user], page, limit: 40, sort: 'id', rating: 'all', threshold: 0 }, env, fetchImpl), SOURCES.sankaku.minGap);
+        let added = 0, existing = 0;
+        for (const p of r.posts) {
+          if (fy.hasVote('sankaku', p.id)) { existing++; continue; }
+          fy.vote({ site: 'sankaku', id: p.id, vote: 1, md5: p.md5, post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type } });
+          if (posts) { posts.set('sankaku', p.id, p); if (library) library.liked(`sankaku:${p.id}`, posts.get(`sankaku:${p.id}`)); }
+          added++;
+        }
+        for (const p of r.posts) skSentMark(skIdOf(p.link), true); // already favorites on Sankaku
+        return json({ added, existing, page, hasMore: !!r.hasMore });
+      }
+      if (route === 'export-sankaku-likes') {
+        // Manual, one batch per call: adds the Sankaku posts you liked here to your Sankaku favorites (the same call as the live sync).
+        // Needs the post link from the saved snapshot for Sankaku's own id; likes without one are skipped. Changes nothing locally.
+        if (!env.SANKAKU_USERNAME || !env.SANKAKU_PASSWORD) return json({ error: 'Log in to Sankaku first (Settings, site keys)' }, 400);
+        const all = fy.listVotes({ filter: 'likes', offset: 0, limit: 1e7 }).items.filter(v => v.site === 'sankaku').sort((a, c) => a.t - c.t);
+        const from = int(b.offset, 0, 0, 1e7), batch = all.slice(from, from + 10);
+        let sent = 0, skipped = 0, failed = 0, already = 0;
+        for (const v of batch) {
+          const sid = skIdOf(posts?.get(`sankaku:${v.id}`)?.link);
+          if (!sid) { skipped++; continue; }
+          if (skSent()?.has(sid)) { already++; continue; }
+          try { await polite('sankaku', () => SOURCES.sankaku.favorite(sid, true, env, fetchImpl), 1500); skSentMark(sid, true); sent++; }
+          catch (e) { if (e.status === 429 || e.status === 401) throw e; failed++; }
+        }
+        return json({ total: all.length, sent, already, skipped, failed, next: from + batch.length, done: from + batch.length >= all.length });
       }
       if (route === 'reset-learning') {
         if (b.confirm !== 'RESET' || !profiles) return json({ error: 'Not confirmed' }, 400);
@@ -323,6 +365,7 @@ function handleExport(request, url, fy, posts) {
 
 export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   const url = new URL(request.url);
+  skSentCtx = ctx.skSent || null;
   if (url.pathname === '/api/lib/export' && request.method === 'GET') return handleExport(request, url, ctx.foryou, ctx.posts);
   if (url.pathname === '/api/lib/download') return handleDownload(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.library);
   if (url.pathname === '/api/lib/restart' && request.method === 'POST') {
