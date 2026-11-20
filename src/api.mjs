@@ -468,7 +468,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       maxScore: int(p.get('max'), 0, 0, 100000),
       threshold: p.has('th') ? int(p.get('th'), 0, 0, 5) : null,
       books: p.get('bk') === 'always' ? 'always' : null,
-      recommend: p.get('rec') === '1',
+      recommend: p.get('rec') === '1' ? 'feed' : p.get('rec') === 'u' ? 'user' : false,
       pr: Math.min(5, Math.max(0.2, Number(p.get('pr')) || 0.46)),
       shape: ['portrait', 'landscape'].includes(p.get('shape')) ? p.get('shape') : 'any',
       page: int(p.get('page'), 0, 0, 200000),

@@ -211,8 +211,10 @@ export const sankaku = {
   },
 
   async search(q, env, fetchImpl = fetch) {
-    // Sankaku For you: an empty search asks the account's own recommendations instead (read-only, nothing is sent back).
-    const tags = buildTags(q), rec = !!q.recommend && !tags, key = `${rec ? 'rec' : tags}|${q.limit}`;
+    // Sankaku For you (read-only, nothing is sent back): 'feed' = the site's For You feed, tags and excludes still apply like on the site;
+    // 'user' = the recommended_for:<username> tag (a separate, favs/votes-based recommender).
+    const base = buildTags(q), forUser = q.recommend === 'user' && env.SANKAKU_USERNAME && !/(^|\s)recommended_for/.test(base) ? `recommended_for:${cleanTag(env.SANKAKU_USERNAME)}` : '';
+    const tags = [forUser, base].filter(Boolean).join(' '), rec = q.recommend === 'feed', key = `${rec ? 'rec|' : ''}${tags}|${q.limit}`;
     let c = cursors.get(key);
     if (!c || q.page === 0) { c = [null]; cursors.delete(key); cursors.set(key, c); if (cursors.size > 50) cursors.delete(cursors.keys().next().value); }
     // A jump past the known cursors (For You picks random pages) loads the next page in order instead of walking there.
@@ -221,10 +223,11 @@ export const sankaku = {
     for (let page = start; page <= want; page++) {
       if (page > 0 && !c[page]) return { posts: [], hasMore: false };
       if (page > start) await sleep(1000);
-      console.log(`  [sankaku] page ${page}  ${rec ? 'for you' : `tags: ${tags || '(none)'}`}`);
+      console.log(`  [sankaku] page ${page}  ${rec ? 'for you ' : ''}tags: ${tags || '(none)'}`);
       // Same extra parameters the site's own search sends (default_threshold 2, hide_posts_in_books in-larger-tags); Settings can lower the threshold to 0 and hide book pages always. pool:/fav: searches skip the book filter.
-      data = await call('/v2/posts/keyset', { limit: String(q.limit), ...(rec ? { is_recommendation: 'true', page: String(page + 1) } : { tags }), default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tags) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] ? { next: c[page] } : {}) }, env, fetchImpl, true, rec ? { 'X-Sankaku-Capabilities': 'recommendation-context-v2' } : {});
-      c[page + 1] = data?.meta?.next || '';
+      data = await call('/v2/posts/keyset', { limit: String(q.limit), ...(tags ? { tags } : {}), ...(rec ? { is_recommendation: 'true', page: String(page + 1) } : {}), default_threshold: String(q.threshold ?? 2), ...(/(^|\s)(pool|fav):/.test(tags) ? {} : { hide_posts_in_books: q.books === 'always' ? 'always' : 'in-larger-tags' }), ...(c[page] && c[page] !== '-' ? { next: c[page] } : {}) }, env, fetchImpl, true, rec ? { 'X-Sankaku-Capabilities': 'recommendation-context-v2' } : {});
+      // The For You feed can end its cursor while more pages exist; the site keeps going as long as a page has posts ('-' = page number only).
+      c[page + 1] = data?.meta?.next || (rec && data?.data?.length ? '-' : '');
     }
     const raw = Array.isArray(data?.data) ? data.data : [];
     const life = raw[0]?.file_url ? Math.round((expiry(String(raw[0].file_url)) - Date.now()) / 1000) : null;

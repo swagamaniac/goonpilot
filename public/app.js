@@ -209,7 +209,7 @@ const api = {
     // Only non-default params are sent; the server treats missing ones as the defaults. pr (screen ratio) is only used by "Fits my screen".
     const all = {
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && S.skRec ? { rec: '1' } : {}), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
+      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && ['feed', 'user'].includes(S.skRec) && !q.include.length && !q.exclude.length && !q.or.length && !q.orGroups.length ? { rec: S.skRec === 'user' ? 'u' : '1' } : {}), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
     };
     const skip = { sort: 'id', rating: 'all', min: '0', max: '0', page: '0', shape: 'any' };
     const p = new URLSearchParams(Object.entries(all).filter(([k, v]) => v && v !== skip[k]));
@@ -1868,10 +1868,12 @@ function renderSiteList() {
   bcb.onchange = () => { S.skBooks = bcb.checked; store.set('skBooks', S.skBooks); markDirty(); };
   bk.append(bcb, ' Sankaku: hide comic/book pages everywhere');
   d.append(bk, el('p', 'hint', 'Off: like the site, book pages are hidden only on big tags. On: always hidden (except pool: and fav: searches).'));
-  const rc = el('label'), rcb = el('input'); rcb.type = 'checkbox'; rcb.checked = S.skRec;
-  rcb.onchange = () => { S.skRec = rcb.checked; store.set('skRec', S.skRec); markDirty(); };
-  rc.append(rcb, " Sankaku For you (uses your Sankaku account's recommendations)");
-  d.append(rc, el('p', 'hint', 'Only for searches with no tags. Read-only: this does not send anything to Sankaku.'));
+  const rc = el('label'), rcs = el('select');
+  for (const [v, t] of [['off', 'off'], ['feed', 'For You feed'], ['user', 'Recommended for me']]) { const o = el('option'); o.value = v; o.textContent = t; rcs.append(o); }
+  rcs.value = ['feed', 'user'].includes(S.skRec) ? S.skRec : 'off';
+  rcs.onchange = () => { S.skRec = rcs.value === 'off' ? false : rcs.value; store.set('skRec', S.skRec); markDirty(); };
+  rc.append('Sankaku recommendations: ', rcs);
+  d.append(rc, el('p', 'hint', "Uses your Sankaku account. For You feed = the site's For You tab; Recommended for me = recommended_for:<your name> (based on your Sankaku favs/votes). Only used when you search Sankaku with no tags of your own (your blocklist still applies); searches with tags stay normal. Read-only: nothing is sent to Sankaku."));
   const sf = el('label'), sfb = el('input'); sfb.type = 'checkbox'; sfb.checked = S.skFav;
   sfb.onchange = () => { S.skFav = sfb.checked; store.set('skFav', S.skFav); };
   sf.append(sfb, ' Sankaku: sync likes to your Sankaku favorites');
@@ -2261,6 +2263,13 @@ const viewer = {
     d.append(m);
     const link = el('a', 'extlink', `Open on ${p.site} ↗`); link.href = p.link; link.target = '_blank'; link.rel = 'noopener noreferrer';
     d.append(link);
+    // Sankaku's own "more like this": the post id is the last part of its link.
+    const skId = p.site === 'sankaku' ? decodeURIComponent(String(p.link || '').split('/').pop() || '') : '';
+    if (skId) {
+      const more = el('a', 'extlink', 'More like this →'); more.href = '#'; more.title = 'Sankaku\'s recommendations for this post (recommended_for_post:)';
+      more.onclick = (e) => { e.preventDefault(); this.close(); fillSearch(['sankaku'], [{ kind: 'tag', name: 'recommended_for_post:' + skId, mod: '+', type: 'meta' }]); newSearch(); }; // the click is the explicit search request
+      d.append(' · ', more);
+    }
     if (p.dbg && p.md5) {
       const sec = el('section'), box = el('div', 'aitags', 'analysing...'); sec.append(el('h3', null, 'AI tags'), box); d.append(sec);
       const load = (tries) => fetch('/api/vision/tags?md5=' + p.md5, { headers: { 'x-goonpilot': '1' } }).then(r => r.json()).then(j => {
