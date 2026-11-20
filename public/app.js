@@ -66,7 +66,7 @@ async function pullUi() {
       if (v === undefined || v === null) { if (local !== undefined) { prefDirty.add(k); pushUi('prefs'); } continue; }
       if (JSON.stringify(v) === JSON.stringify(local)) continue;
       try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {}
-      if (k === 'hotkeys') S.hk = { ...HK_DEFAULT, ...v }; else S[k] = k === 'fill' ? !!v : k === 'blocked' && (Array.isArray(v) || typeof v !== 'object') ? {} : v;
+      if (k === 'hotkeys') S.hk = withHkDefaults(v); else S[k] = k === 'fill' ? !!v : k === 'blocked' && (Array.isArray(v) || typeof v !== 'object') ? {} : v;
     }
     renderHints(); soundIcon(); updTouchBar(); applyGestures(); render.sites();
     const srvSeen = ui.seen && typeof ui.seen === 'object' ? ui.seen : {};
@@ -93,6 +93,14 @@ function parsePrefix(text) {
 }
 const nextMod = m => MODS[(MODS.indexOf(m) + 1) % MODS.length];
 
+// Hotkey defaults live only here. A stored set from before an action existed gets that action's default,
+// unless the user already bound that key to something else (then the new action starts unbound).
+const HK_DEFAULT = { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', nextPage: 'n' };
+function withHkDefaults(saved) {
+  const hk = saved && typeof saved === 'object' && !Array.isArray(saved) ? { ...saved } : {}, used = new Set(Object.values(hk));
+  for (const [a, k] of Object.entries(HK_DEFAULT)) if (typeof hk[a] !== 'string') hk[a] = used.has(k) ? '' : k;
+  return hk;
+}
 const legacySite = store.get('site', null);
 const st = store.get('search2', null) || { ...store.get('search:' + legacySite, store.get('search', {})), sites: legacySite ? [legacySite] : [] };
 const S = {
@@ -117,7 +125,7 @@ const S = {
   vIndex: 0, vOpen: false, auto: false,
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
-  artists: {}, history: store.get('history', []), hk: { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', nextPage: 'n', ...store.get('hotkeys', {}) }, hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
+  artists: {}, history: store.get('history', []), hk: withHkDefaults(store.get('hotkeys', {})), hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
   hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
@@ -667,11 +675,10 @@ $('results').addEventListener('mouseover', e => {
 });
 $('results').addEventListener('mouseleave', () => { hovered.p = null; });
 const HK_LABEL = { like: 'Like', dislike: 'Dislike', superLike: 'Super like', superDislike: 'Super dislike', hints: 'Show / hide the hotkey bar', next: 'Next post (fullscreen)', prev: 'Previous post (fullscreen)', details: 'Details panel (fullscreen)', close: 'Close fullscreen', search: 'Search', nextPage: 'Next page (infinite scroll off)' };
-const HK_DEFAULT = { like: '8', dislike: '2', superLike: '9', superDislike: '3', hints: 'h', next: 'j', prev: 'k', details: 'arrowright', close: 'escape', search: 'enter', nextPage: 'n' };
 const HK_VALUE = { like: 1, dislike: -1, superLike: 2, superDislike: -2 };
 const HK_FIXED = [['↓ / ↑', 'Also next / previous post (fullscreen)'], ['←', 'Also details panel (fullscreen)']];
 const HK_NAME = { arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→', escape: 'Esc', enter: 'Enter', backspace: 'Backspace', delete: 'Del', home: 'Home', end: 'End', pageup: 'PgUp', pagedown: 'PgDn' };
-const keyName = k => HK_NAME[k] || k.toUpperCase();
+const keyName = k => k ? HK_NAME[k] || k.toUpperCase() : '—'; // '' = unbound
 const hkAction = key => Object.keys(HK_LABEL).find(a => S.hk[a] === key);
 document.addEventListener('keydown', e => {
   if (!S.capture) return;
