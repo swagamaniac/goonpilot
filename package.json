@@ -3,7 +3,7 @@
   "private": true,
   "license": "WTFPL",
   "version": "0.1.0",
-  "description": "Personal booru viewer. Local server; the only packages are the optional image-analysis ones (onnxruntime-node, sharp).",
+  "description": "Personal booru viewer. Local server; the only npm packages are the optional image-analysis ones (onnxruntime-node, sharp). The optional Hydra tagger uses Python, see tagger/requirements.txt.",
   "type": "module",
   "engines": {
     "node": ">=18"
