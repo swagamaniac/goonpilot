@@ -616,7 +616,7 @@ function reportViewed(p, force = false) {
 function applyFyUi() {
   document.body.classList.toggle('fy-on', S.fyOn); renderHints(); applyGestures();
   $('forBtn').hidden = !S.fyOn;
-  if (!S.fyOn && S.mode === 'foryou') newSearch();
+  if (!S.fyOn && S.mode === 'foryou') idleSearch();
   S.posts.forEach(refreshVote);
 }
 function loadFyState() {
@@ -1057,10 +1057,23 @@ q.addEventListener('keydown', e => {
   } else if (e.key === 'Escape') { sug.hidden = true; return; }
   btns.forEach((b, i) => b.classList.toggle('hl', i === hl));
 });
+// The app never searches on its own: this leaves the search view with nothing loaded, ready for the user to press Search.
+function idleSearch() {
+  S.ctrl?.abort(); S.gen++; S.active = null; S.feeds = {}; S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.loading = false; S.dirty = false;
+  setMode('search');
+  $('results').replaceChildren(); render.chips(); render.sites(); render.searchBtn(); render.status(); render.endState(); window.scrollTo(0, 0);
+}
+// Loads a history/saved/tag entry into the search fields only. Search runs when the user presses Search.
+function fillSearch(sites, terms, opts = {}) {
+  if (S.mode !== 'search') idleSearch();
+  S.sites = sites.filter(x => ALL_SITES.includes(x)); S.terms = structuredClone(terms).map(normTerm);
+  if (opts.sort !== undefined) { S.sort = opts.sort; S.rating = opts.rating; S.minScore = opts.minScore; S.scoreMax = !!opts.scoreMax; }
+  syncFilterUi(); markDirty();
+  toast('Filled in. Press Search to run it');
+}
 function runHistory(hh) {
   closeSheet(); sug.hidden = true;
-  S.sites = hh.sites.filter(x => ALL_SITES.includes(x)); S.terms = structuredClone(hh.terms).map(normTerm);
-  S.sort = hh.sort; S.rating = hh.rating; S.minScore = hh.minScore; S.scoreMax = !!hh.scoreMax; syncFilterUi(); newSearch();
+  fillSearch(hh.sites, hh.terms, hh);
 }
 function showHistory() {
   if (q.value.trim() || !S.history.length) { if (!q.value.trim()) sug.hidden = true; return; }
@@ -1182,7 +1195,7 @@ function renderSupertags(body) {
     const it = el('div', 'item'), g = el('button', 'grow');
     g.title = 'Add to search';
     g.append(el('div', 't', '★ ' + s.name), el('div', 's', s.tags.join(' ')));
-    g.onclick = () => { closeSheet(); pick({ name: s.name, type: 'super' }, '+'); };
+    g.onclick = () => { pick({ name: s.name, type: 'super' }, '+'); toast('Added ' + s.name + '. Press Search to apply'); };
     const edit = el('button', 'iconbtn', 'Edit');
     edit.onclick = () => { stEdit = { index: i, name: s.name, tags: toTagObjs(s.tags) }; renderSheet(); };
     it.append(g, edit); list.append(it);
@@ -1309,16 +1322,14 @@ function renderSheetBody() {
       g.append(el('div', 't', s.name), el('div', 's', `${sites.join(' + ')} · ${s.sort} · ${s.rating}${s.minScore ? (s.scoreMax ? ' · score ≤ ' : ' · score ≥ ') + s.minScore : ''}`));
       g.onclick = () => {
         closeSheet();
-        S.sites = sites.filter(x => ALL_SITES.includes(x));
-        S.terms = structuredClone(s.terms).map(normTerm); S.sort = s.sort; S.rating = s.rating; S.minScore = s.minScore; S.scoreMax = !!s.scoreMax;
+        fillSearch(sites, s.terms, s);
         S.newKey = 'saved:' + JSON.stringify([s.name, s.terms]);
-        syncFilterUi(); newSearch();
       };
       const del = el('button', 'iconbtn', 'Delete');
       del.onclick = () => { S.saved.splice(i, 1); store.set('saved', S.saved); renderSheet(); };
       it.append(g, del); list.append(it);
     });
-    body.append(list, el('p', 'hint', 'Stored only in this browser. Opening a saved search runs it right away.'));
+    body.append(list, el('p', 'hint', 'Stored only in this browser. Opening a saved search fills it in; press Search to run it.'));
   } else if (tab === 'history') {
     if (!S.history.length) body.append(el('p', 'hint', 'No searches yet. Your last 20 searches show up here, even after closing the app.'));
     else { const clr = el('button', 'btn ghost', 'Clear history'); clr.onclick = () => { S.history = []; store.set('history', []); renderSheet(); }; body.append(clr); }
@@ -2046,7 +2057,7 @@ const viewer = {
         const row = el('span', 'tagrow');
         const nb = el('button', 'tagname'); nb.title = 'Search only this tag (on this site)';
         nb.append(el('span', 'dot t-' + type), el('span', null, t.name));
-        nb.onclick = () => { this.close(); S.sites = [p.site]; S.terms = [{ kind: 'tag', name: t.name, mod: '+', type }]; syncFilterUi(); newSearch(); };
+        nb.onclick = () => { this.close(); fillSearch([p.site], [{ kind: 'tag', name: t.name, mod: '+', type }]); };
         const cnt = t.count ? el('span', 'tagcnt', fmt(t.count)) : null;
         const plus = el('button', 'mini', '+'); plus.title = 'Add to search'; plus.setAttribute('aria-label', 'Add ' + t.name);
         plus.onclick = () => addTerm(t, '+', type);
@@ -2149,7 +2160,6 @@ document.addEventListener('keydown', e => {
 soundIcon(); syncFilterUi(); render.chips(); render.searchBtn(); render.status(); render.endState(); observeSentinel();
 api.status().then(s => { S.status = s; syncSites(s); render.sites(); render.status(); }).catch(() => {});
 setDebug(S.fyDebug); renderHints(); loadFyState(); loadArtists(); pullUi();
-newSearch(false);
 
 (function autoHideBar() {
   const bar = document.querySelector('header.bar'); let last = window.scrollY, ticking = false;
