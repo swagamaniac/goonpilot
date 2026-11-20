@@ -60,7 +60,7 @@ async function pullUi() {
       S[k] = first ? uniq([...srv, ...S[k]], mergeKey[k]) : srv;
       try { localStorage.setItem('goonpilot:' + k, JSON.stringify(S[k])); } catch {}
     }
-    const srvPrefs = ui.prefs && typeof ui.prefs === 'object' ? ui.prefs : {};
+    const srvPrefs = ui.prefs && typeof ui.prefs === 'object' ? ui.prefs : {}, wasInfinite = S.infinite;
     for (const k of PREFS) {
       const v = srvPrefs[k], local = store.get(k, undefined);
       if (v === undefined || v === null) { if (local !== undefined) { prefDirty.add(k); pushUi('prefs'); } continue; }
@@ -69,6 +69,7 @@ async function pullUi() {
       if (k === 'hotkeys') S.hk = withHkDefaults(v); else S[k] = k === 'fill' ? !!v : k === 'blocked' && (Array.isArray(v) || typeof v !== 'object') ? {} : v;
     }
     renderHints(); soundIcon(); updTouchBar(); applyGestures(); render.sites();
+    if (S.infinite !== wasInfinite) { observeSentinel(); render.endState(); }
     const srvSeen = ui.seen && typeof ui.seen === 'object' ? ui.seen : {};
     for (const [k, v] of Object.entries(srvSeen)) { const cur = S.seen[k] || (S.seen[k] = {}); for (const [site, id] of Object.entries(v)) cur[site] = Math.max(cur[site] || 0, id); }
     store.set('seen', S.seen);
@@ -299,6 +300,7 @@ function buildBase() {
 }
 
 function markDirty() {
+  S.newKey = null; S.newSort = null; // a saved search's NEW badges only apply if it runs unchanged (callers set newKey after filling)
   if (S.mode === 'foryou') { persistSearch(); enterForYou(); return; }
   S.dirty = true; persistSearch();
   render.chips(); render.sites(); render.searchBtn(); render.status();
