@@ -18,6 +18,15 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
 const PORT = Number(process.env.PORT) || 8787;
 const HOST = '127.0.0.1';
+// Ring buffer of recent server console lines; the browser can print them via Settings > "Print server log in browser console".
+const srvLog = []; let srvLogN = 0;
+for (const lvl of ['log', 'info', 'warn', 'error']) {
+  const orig = console[lvl].bind(console);
+  console[lvl] = (...a) => {
+    try { srvLog.push({ n: ++srvLogN, t: Date.now(), l: lvl, m: a.map(x => typeof x === 'string' ? x : (() => { try { return JSON.stringify(x); } catch { return String(x); } })()).join(' ').slice(0, 2000) }); if (srvLog.length > 500) srvLog.shift(); } catch {}
+    orig(...a);
+  };
+}
 
 function loadVars() {
   const env = {};
@@ -210,6 +219,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `${viaTailscale ? 'https' : 'http'}://${req.headers.host}`);
     if (url.pathname.startsWith('/api/')) {
       if (url.pathname === '/api/pages/backup' && req.method === 'GET') return send(res, 200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="goonpilot-backup-${new Date().toISOString().slice(0, 10)}.json"`, 'Cache-Control': 'no-store' }, pagesExport());
+      if (url.pathname === '/api/serverlog' && req.method === 'GET') { const since = Number(url.searchParams.get('since')) || 0; return send(res, 200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, JSON.stringify({ last: srvLogN, lines: srvLog.filter(x => x.n > since) })); }
       const fwd = { accept: req.headers.accept || '*/*' };
       if (req.headers.range) fwd.range = req.headers.range;
       const ac = new AbortController();

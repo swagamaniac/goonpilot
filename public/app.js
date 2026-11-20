@@ -1546,6 +1546,7 @@ function renderSettingsTab(body) {
     body.append(sitesBox, renderBlocklist());
     body.append(pages ? renderBackup() : renderExport());
     if (pages) return;
+    body.append(renderServerLog());
     const rs = el('button', 'btn ghost', '↻ Restart server (start.bat)');
     rs.onclick = async () => {
       if (!rs.dataset.sure) {
@@ -2017,6 +2018,41 @@ function renderSiteList() {
   d.skDet = skDet; // appended last in the Sites category by renderSettingsTab
   return d;
 }
+// Prints new server log lines to the browser console while Settings > "Print server log in browser console" is on.
+let srvLogTimer = null, srvLogLast = null;
+function srvLogPoll() {
+  clearInterval(srvLogTimer); srvLogTimer = null;
+  if (!store.get('srvLog', false)) return;
+  const tick = async () => {
+    try {
+      const r = await fetch('/api/serverlog?since=' + (srvLogLast ?? 1e15), { cache: 'no-store' }).then(x => x.json());
+      if (srvLogLast === null) { srvLogLast = r.last; return; } // first poll: only lines from now on
+      for (const x of r.lines) console[x.l === 'error' ? 'error' : x.l === 'warn' ? 'warn' : 'log']('[server ' + new Date(x.t).toLocaleTimeString() + ']', x.m);
+      srvLogLast = r.last;
+    } catch {}
+  };
+  srvLogLast = null; tick(); srvLogTimer = setInterval(tick, 2000);
+}
+srvLogPoll();
+// Settings > Server log: the server's recent console lines (ring buffer behind /api/serverlog), auto-refreshing while open.
+function renderServerLog() {
+  const det = el('details', 'fydrop'), pre = el('pre', 'hint'), bar = el('div', 'inline');
+  pre.style.cssText = 'white-space:pre-wrap;max-height:22em;overflow:auto;font-size:.8em';
+  let lines = [], last = 0, timer = null;
+  const draw = () => { pre.textContent = lines.map(x => `${new Date(x.t).toLocaleTimeString()} ${x.l === 'log' || x.l === 'info' ? '' : x.l.toUpperCase() + ' '}${x.m}`).reverse().join('\n') || '(no lines yet)'; };
+  const refresh = async () => {
+    clearTimeout(timer); if (!det.open || !det.isConnected) return;
+    try { const r = await fetch('/api/serverlog?since=' + last, { cache: 'no-store' }).then(x => x.json()); if (r.last < last) { lines = []; } lines = lines.concat(r.lines).slice(-500); last = r.last; draw(); }
+    catch { pre.textContent = 'Could not reach the server'; }
+    timer = setTimeout(refresh, 2000);
+  };
+  const clr = el('button', 'btn ghost', 'Clear'), cp = el('button', 'btn ghost', 'Copy');
+  clr.onclick = () => { lines = []; draw(); };
+  cp.onclick = async () => { try { await navigator.clipboard.writeText(pre.textContent); toast('Copied'); } catch { toast('Could not copy'); } };
+  bar.append(clr, cp);
+  det.append(el('summary', null, 'Server log'), bar, pre); det.ontoggle = refresh;
+  return det;
+}
 function renderBlocklist() {
   const det = el('details', 'fydrop'); det.open = !!S.blOpen; det.ontoggle = () => { S.blOpen = det.open; };
   det.append(el('summary', null, 'Blocklist'));
@@ -2157,6 +2193,7 @@ function renderForYouSettings() {
     segField('Phone: double-tap to like', [true, false], S.gDouble, v => v ? 'On' : 'Off', v => { S.gDouble = v; store.set('gDouble', v); applyGestures(); }),
     segField('Phone: swipe right = dislike, left = tags', [true, false], S.gSwipe, v => v ? 'On' : 'Off', v => { S.gSwipe = v; store.set('gSwipe', v); applyGestures(); }),
     segField('Debug: explain why each post was picked', [true, false], S.fyDebug, v => v ? 'On' : 'Off', v => setDebug(v)),
+    segField('Debug: print server log in browser console (F12, this device)', [true, false], !!store.get('srvLog', false), v => v ? 'On' : 'Off', v => { store.set('srvLog', v); srvLogPoll(); }),
     segField('Posts per batch', [5, 10, 15, 20], S.fyBatch, String, v => { S.fyBatch = v; store.set('fyBatch', v); }),
     el('p', 'hint', 'Small batches mean each vote improves the next batch (it fetches more candidates behind the scenes and shows you only the best few). The next batch loads when you reach the end.'));
   const s = S.fyState;
