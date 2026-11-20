@@ -1195,6 +1195,7 @@ let tab = 'saved';
 const sheetScroll = {};
 const saveSheetScroll = () => { if (!$('sheetRoot').hidden && tab) sheetScroll[tab] = document.querySelector('.sheet').scrollTop; };
 function openSheet(t) {
+  if ($('sheetRoot').hidden) orgMode = delMode = false; // Organize / Delete never carry over to the next time the sheet opens
   const switching = tab !== t || $('sheetRoot').hidden;
   saveSheetScroll();
   tab = t; $('sheetRoot').hidden = false;
@@ -1703,16 +1704,17 @@ function addCat(key) {
 // Header row of a category: move, rename, delete. onItems(from, to) re-labels its items ('' = uncategorized).
 function catHeader(key, name, onItems) {
   const l = catList(key), i = l.indexOf(name), h = el('div', 'cathead');
-  const ren = el('button', 'iconbtn', '✎'); ren.title = 'Rename category';
+  const id = key + ':' + name, keepOpen = to => { if (!catOpen.delete(id)) return; if (to) catOpen.add(key + ':' + to); store.set('catOpen', [...catOpen]); };
+  const ren = el('button', 'iconbtn', '✎'); ren.title = 'Rename category'; ren.setAttribute('aria-label', 'Rename category ' + name);
   ren.onclick = async () => {
     const n = (prompt('Rename category', name) || '').trim().slice(0, 40); if (!n || n === name) return;
     if (l.some(c => c.toLowerCase() === n.toLowerCase() && c !== name)) { toast('That category already exists'); return; }
-    l[i] = n; store.set(key, l); await onItems(name, n); renderSheet();
+    l[i] = n; store.set(key, l); keepOpen(n); await onItems(name, n); renderSheet();
   };
-  const del = el('button', 'iconbtn', '×'); del.title = 'Delete category (its items become uncategorized)';
-  del.onclick = async () => { if (!confirm(`Delete category "${name}"? Its items stay, just uncategorized.`)) return; l.splice(i, 1); store.set(key, l); await onItems(name, ''); renderSheet(); };
-  const id = key + ':' + name, title = el('h3', 'grow cattitle', name); title.tabIndex = 0; title.setAttribute('role', 'button');
-  const setFold = c => { h.parentElement?.classList.toggle('closed', c); title.classList.toggle('shut', c); };
+  const del = el('button', 'iconbtn', '×'); del.title = 'Delete category (its items become uncategorized)'; del.setAttribute('aria-label', 'Delete category ' + name);
+  del.onclick = async () => { if (!confirm(`Delete category "${name}"? Its items stay, just uncategorized.`)) return; l.splice(i, 1); store.set(key, l); keepOpen(''); await onItems(name, ''); renderSheet(); };
+  const title = el('h3', 'grow cattitle', name); title.tabIndex = 0; title.setAttribute('role', 'button');
+  const setFold = c => { h.parentElement?.classList.toggle('closed', c); title.classList.toggle('shut', c); title.setAttribute('aria-expanded', !c); };
   title.onclick = () => { const c = catOpen.has(id); catOpen[c ? 'delete' : 'add'](id); store.set('catOpen', [...catOpen]); setFold(c); };
   title.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); title.click(); } };
   queueMicrotask(() => setFold(!catOpen.has(id)));

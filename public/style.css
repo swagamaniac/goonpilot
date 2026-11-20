@@ -379,13 +379,14 @@ body.dragnow { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 
 /* Organize / Delete mode switches */
 .modebar { display: flex; gap: 18px; align-items: center; padding: 2px 0 6px; }
-.sw { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; user-select: none; font-size: 13px; }
-.sw input { display: none; }
+.sw { position: relative; display: inline-flex; gap: 8px; align-items: center; cursor: pointer; user-select: none; font-size: 13px; }
+.sw input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.sw input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sw .slider { width: 40px; height: 22px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line); position: relative; transition: .15s; flex: none; }
 .sw .slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--fg); transition: .15s; }
 .sw input:checked + .slider { background: var(--accent); border-color: var(--accent); }
 .sw input:checked + .slider::after { left: 20px; background: var(--accent-ink); }
 .organizing { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.organizing .item > *, .organizing .cathead > :not(.cattitle) { pointer-events: none; }
+.organizing .item > *, .organizing .cathead > :not(.cattitle):not(.iconbtn) { pointer-events: none; }
 .organizing .fybox.fold > :not(h3) { pointer-events: none; }
 .organizing .item, .organizing .cathead, .organizing .fybox.fold { outline: 1px dashed var(--line); outline-offset: 1px; }
