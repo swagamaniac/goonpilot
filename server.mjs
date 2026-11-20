@@ -143,7 +143,8 @@ function send(res, status, headers, body) {
 
 async function serveStatic(req, res, pathname) {
   if (pathname === '/') pathname = '/index.html';
-  const file = path.resolve(PUBLIC, '.' + decodeURIComponent(pathname));
+  let rel; try { rel = decodeURIComponent(pathname); } catch { return send(res, 400, { 'Content-Type': 'text/plain' }, 'Bad request'); }
+  const file = path.resolve(PUBLIC, '.' + rel);
   if (!file.startsWith(PUBLIC + path.sep)) return send(res, 403, {}, 'Forbidden');
   try {
     const s = await stat(file);
@@ -232,9 +233,10 @@ const server = http.createServer(async (req, res) => {
       return rd.on('data', c => { bytes += c.length; }).on('error', () => res.destroy()).pipe(res);
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, {}, 'Method not allowed');
-    return serveStatic(req, res, url.pathname);
+    return await serveStatic(req, res, url.pathname); // awaited so a failure lands in the catch below, not as an unhandled rejection
   } catch (err) {
     console.error(err);
+    if (res.headersSent) return res.destroy(); // writeHead twice would throw out of the handler
     send(res, 500, { 'Content-Type': 'text/plain' }, 'Server error');
   }
 });
