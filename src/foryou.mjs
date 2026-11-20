@@ -28,7 +28,7 @@ function makeIgnore(list) {
 }
 const PAHEAL_KEEP_IGNORED = new Set(['animated', 'video', 'tagme', 'gif', 'mp4', 'webm']);
 const SCORE_RULE = /^score:(>=?)(\d{1,6})$/;
-export const DEFAULT_WEIGHTS = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1 };
+export const DEFAULT_WEIGHTS = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1, search: 1, searchOn: 0 };
 export const DEFAULT_PREFS = { mode: 'balanced', media: 'all', blacklist: [], whitelist: [], ignoreCharacters: false, ignoreCopyright: false, ignoreArtists: false, ignoreSpecies: false, minScore: {}, boost: {}, boostType: {}, weights: { ...DEFAULT_WEIGHTS }, genericV1: true, ignored: DEFAULT_IGNORED };
 const MODES = { balanced: { cut: 0.6, every: 4 }, comfort: { cut: 0.85, every: 8 }, explore: { cut: 0.4, every: 2 } };
 export const emptyData = () => ({ v: 1, prefs: { ...DEFAULT_PREFS }, enabled: true, votes: {}, seen: {}, seenMd5: {}, tagSeen: {}, nSeen: 0, bandit: {} });
@@ -185,7 +185,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
   const voteW = (v, W) => {
     const oldDive = v.dive === undefined && v.pw === 0.1, a = Math.abs(v.vote);
     const base = v.vote > 0 ? (a === 2 ? W.superLike : W.like) : (a === 2 ? W.superDislike : W.dislike);
-    return Math.sign(v.vote) * base * (oldDive ? 1 : v.pw ?? 1) * (oldDive || v.dive ? W.dive : 1);
+    return Math.sign(v.vote) * base * (oldDive ? 1 : v.pw ?? 1) * (oldDive || v.dive ? W.dive : 1) * (v.search ? (W.searchOn === 0 ? 0 : W.search ?? 1) : 1);
   };
   const weights = () => ({ ...DEFAULT_WEIGHTS, ...get().prefs.weights });
   function trainLR(votes, forPaheal, key) {
@@ -464,7 +464,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
     resetLearning() { const d = get(); dry.clear(); exhausted.clear(); backup('before-reset-learning'); Object.assign(d, { votes: {}, seen: {}, seenMd5: {}, tagSeen: {}, nSeen: 0, bandit: {} }); dive = null; served.clear(); servedMd5.clear(); session.reset(); persist(); },
     reset() { get(); dry.clear(); exhausted.clear(); backup('before-reset'); data = emptyData(); dive = null; served.clear(); servedMd5.clear(); session.reset(); persist(); },
 
-    vote({ site, id, vote, post, strat, md5, dive: inDive }) {
+    vote({ site, id, vote, post, strat, md5, dive: inDive, search }) {
       const d = get();
       if (!isOn()) throw Object.assign(new Error('For you is switched off'), { status: 409 });
       if (!/^[a-z0-9_-]{1,20}$/.test(site) || !Number.isInteger(id) || id < 0) throw Object.assign(new Error('Bad post'), { status: 400 });
@@ -476,7 +476,7 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       markSeen({ id, ...cp, md5: /^[0-9a-f]{32}$/.test(md5 || '') ? md5 : '' }, site);
       const pw = session.record(k, cp, Math.sign(vote) * (Math.abs(vote) === 2 ? 3 : 1)), isDive = !!dive && inDive === true;
       const s = STRATS.includes(strat) || strat === 'popular' ? strat : null;
-      d.votes[k] = { site, id, vote, t: now(), pw, rating: cp.rating, type: cp.type, strat: s, ...(isDive ? { dive: true } : {}), tags: cp.tags.filter(t => t.type !== 'meta').map(t => [t.name, t.type]) };
+      d.votes[k] = { site, id, vote, t: now(), pw, rating: cp.rating, type: cp.type, strat: s, ...(isDive ? { dive: true } : {}), ...(search === true && !isDive ? { search: true } : {}), tags: cp.tags.filter(t => t.type !== 'meta').map(t => [t.name, t.type]) };
       if (s) { const b = d.bandit[s] || (d.bandit[s] = { w: 0, l: 0 }); vote > 0 ? b.w++ : b.l++; if (b.w + b.l > 200) { b.w /= 2; b.l /= 2; } }
       prune(); persist();
       return vote;

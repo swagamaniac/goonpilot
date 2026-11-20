@@ -613,7 +613,7 @@ async function castVote(p, want) {
   const T = { 2: '⭐ Super liked', 1: '👍 Liked', '-1': '👎 Disliked', '-2': '⛔ Super disliked' };
   voteToast(next ? T[next] : ({ 2: 'Super like removed', 1: 'Like removed', '-1': 'Dislike removed', '-2': 'Super dislike removed' })[cur], next);
   const token = (castVote.n = (castVote.n || 0) + 1); (castVote.last ||= new Map()).set(k, token);
-  const body = { site: p.site, id: p.id, vote: next, strat: p.strat, md5: p.md5 || '', dive: S.mode === 'foryou' && !!S.fyState?.dive, ...(p.site === 'sankaku' && S.skFav ? { skFav: true, prev: cur, link: p.link } : {}), post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type } };
+  const body = { site: p.site, id: p.id, vote: next, strat: p.strat, md5: p.md5 || '', dive: S.mode === 'foryou' && !!S.fyState?.dive, search: S.mode !== 'foryou', ...(p.site === 'sankaku' && S.skFav ? { skFav: true, prev: cur, link: p.link } : {}), post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type } };
   const WAITS = [1500, 3000, 6000, 10000, 15000, 20000];
   try {
     if (next) saveSnapshot(p);
@@ -1437,15 +1437,17 @@ function renderFyTab(body) {
     // Vote weights (was the Votes tab) live here as their own foldable section.
     const pr = S.fyState?.prefs, votes = [];
     if (pr) {
-    const W = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1, ...pr.weights };
+    const W = { like: 1, dislike: 1, superLike: 3, superDislike: 3, dive: 1, search: 1, searchOn: 0, ...pr.weights };
     const field = (k, label, opts) => segField(label, opts, W[k], v => v + '×', async v => { if (await setPrefs({ weights: { [k]: v } })) renderSheet(); });
     votes.push(group('Vote weights',
+      segField('Votes in normal search count for For you', [1, 0], W.searchOn, v => v ? 'On' : 'Off', async v => { if (await setPrefs({ weights: { searchOn: v } })) renderSheet(); }),
       field('like', '👍 Like', [0.5, 1, 1.5, 2, 3]),
       field('superLike', '⭐ Super like', [1, 2, 3, 4, 5]),
       field('dislike', '👎 Dislike', [0.5, 1, 1.5, 2, 3]),
       field('superDislike', '⛔ Super dislike', [1, 2, 3, 4, 5]),
       field('dive', '🧭 Deep Dive multiplier', [0, 0.25, 0.5, 1, 1.5, 2]),
-      el('p', 'hint', 'How much each vote counts for For you. The Deep Dive multiplier scales any vote given inside a Deep Dive (1× = same as normal). Changes apply to past votes too. Set per profile.')
+      field('search', '🔎 Normal search multiplier', [0, 0.25, 0.5, 1, 1.5, 2]),
+      el('p', 'hint', 'How much each vote counts for For you. The Deep Dive multiplier scales any vote given inside a Deep Dive (1× = same as normal). The Normal search multiplier scales votes cast in normal search (only votes from now on are marked; older ones count 1×). Changes apply to past votes too. Set per profile.')
     ));
     }
     const [main, ...rest] = renderForYouSettings();

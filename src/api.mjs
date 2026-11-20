@@ -153,7 +153,7 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
     if (request.method === 'POST') {
       const [b, err] = await readBody(request); if (err) return err;
       if (route === 'vote') {
-        const vote = fy.vote({ site: String(b.site), id: b.id, vote: b.vote, post: b.post, strat: b.strat, md5: b.md5, dive: b.dive === true });
+        const vote = fy.vote({ site: String(b.site), id: b.id, vote: b.vote, post: b.post, strat: b.strat, md5: b.md5, dive: b.dive === true, search: b.search === true });
         if (library && vote > 0) library.liked(`${b.site}:${b.id}`, posts?.get(`${b.site}:${b.id}`));
         // Opt-in (client flag `skFav`): mirror a Sankaku like/unlike to the account's favorites. Only a like adds; removing the
         // like, or disliking a post that was liked, removes. Fire and forget: the local vote is already saved.
