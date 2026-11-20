@@ -123,9 +123,12 @@ function normalizePost(p) {
   };
 }
 
+// Outgoing-request rewrite only: plain 'audio'/'sound' mean Sankaku's has_audio tag.
+const sankakuTerm = (t) => { const c = cleanTag(t); return /^(audio|sound)$/i.test(c) ? 'has_audio' : c; };
+
 function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 'id', rating = 'all' }) {
-  const parts = [...include.map(cleanTag), ...exclude.map(t => '-' + cleanTag(t))].filter(t => t && t !== '-');
-  const groups = [or, ...orGroups].map(g => g.map(cleanTag).filter(Boolean)).filter(g => g.length);
+  const parts = [...include.map(sankakuTerm), ...exclude.map(t => '-' + sankakuTerm(t))].filter(t => t && t !== '-');
+  const groups = [or, ...orGroups].map(g => g.map(sankakuTerm).filter(Boolean)).filter(g => g.length);
   for (const g of groups) parts.push(...(g.length > 1 ? g.map(t => '~' + t) : g));
   if (sort === 'score') parts.push('order:quality');
   else if (sort === 'popular') parts.push('order:popularity');
