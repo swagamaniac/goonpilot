@@ -365,6 +365,7 @@ html, body, button, a { touch-action: manipulation; }
 
 /* Categories and manual ordering (Favorites, Supertags, Saved, settings sections) */
 .dragging { opacity: .6; outline: 2px dashed var(--accent); outline-offset: 2px; }
+body.dragnow { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 .cathead { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .cathead h3 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fybox.fold { position: relative; }

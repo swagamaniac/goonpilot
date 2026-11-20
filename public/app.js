@@ -1622,12 +1622,13 @@ const catOpen = new Set(store.get('catOpen', [])); // expanded categories (all s
 function armDrag(h, begin) {
   h.oncontextmenu = ev => { if (UI.isTouch() && orgMode) ev.preventDefault(); };
   h.onpointerdown = e => {
-    if (!orgOn() || e.button > 0) return;
+    // Fields keep their own drag (sliders, selecting text in a note), so pressing one never moves the section or item around it.
+    if (!orgOn() || e.button > 0 || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
     e.stopPropagation();
     const sx = e.clientX, sy = e.clientY, touch = e.pointerType !== 'mouse', block = ev => ev.preventDefault();
     let st = null, timer = null;
-    const end = () => { clearTimeout(timer); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('touchmove', block); };
-    const start = () => { timer = null; st = begin(); window.addEventListener('touchmove', block, { passive: false }); if (navigator.vibrate) try { navigator.vibrate(15); } catch {} };
+    const end = () => { clearTimeout(timer); document.body.classList.remove('dragnow'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('touchmove', block); };
+    const start = () => { timer = null; st = begin(); document.body.classList.add('dragnow'); getSelection()?.removeAllRanges(); window.addEventListener('touchmove', block, { passive: false }); if (navigator.vibrate) try { navigator.vibrate(15); } catch {} };
     const move = ev => {
       if (!st) { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > (touch ? 8 : 5)) { if (touch) end(); else start(); } return; }
       st.move(ev);
