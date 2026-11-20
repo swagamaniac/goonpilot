@@ -299,7 +299,7 @@ body.selecting .post .media { cursor: pointer; }
 .post.selected { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 10px; }
 .post.selected .media::after { content: '✓'; position: absolute; top: 8px; right: 8px; background: var(--accent); color: var(--accent-ink); border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; font-weight: 700; }
 
-@media (hover: none) and (pointer: coarse) { #hintBar, #hintBtn, #vHint, .hk-box { display: none !important; } }
+@media (hover: none) and (pointer: coarse) { #hintBar, #hintBtn, #vHint, .hk-box, .tabs button[data-tab="hotkeys"] { display: none !important; } }
 
 body.swipe-votes .viewer, body.swipe-votes .vscroll { touch-action: pan-y; }
 .heartburst { position: fixed; z-index: 90; font-size: 72px; line-height: 1; color: #ff4d6d; pointer-events: none; transform: translate(-50%, -50%); animation: hb .75s ease-out forwards; text-shadow: 0 2px 12px rgba(0,0,0,.5); }

@@ -1361,7 +1361,7 @@ function renderSheet() { const sh = document.querySelector('.sheet'), y = sh.scr
 function renderSheetBody() {
   const body = $('sheetBody'); body.replaceChildren();
   body.classList.toggle('organizing', UI.isTouch() && orgMode);
-  if (['saved', 'artists', 'super', 'settings', 'fy'].includes(tab)) queueMicrotask(() => { const mb = modeBar(['saved', 'artists', 'super'].includes(tab)); if (mb) body.prepend(mb); });
+  if (['saved', 'artists', 'super', 'settings', 'fy', 'hotkeys'].includes(tab)) queueMicrotask(() => { const mb = modeBar(['saved', 'artists', 'super'].includes(tab)); if (mb) body.prepend(mb); });
   const list = el('div', 'list');
   if (tab === 'saved') {
     const save = el('button', 'btn', 'Save current search'); save.disabled = !S.terms.length;
@@ -1420,6 +1420,9 @@ function renderSheetBody() {
     const [main, ...rest] = renderForYouSettings();
     body.append(main, ...votes, ...rest, ...renderVision());
     queueMicrotask(() => foldGroups(body));
+  } else if (tab === 'hotkeys') {
+    body.append(...renderHotkeys());
+    queueMicrotask(() => foldGroups(body));
   } else {
     const pages = !!S.status?.pages;
     queueMicrotask(() => foldGroups(body));
@@ -1427,7 +1430,7 @@ function renderSheetBody() {
       segField('Posts per request (per site)', [10, 20, 50, 100], S.pageSize, String, v => { S.pageSize = v; store.set('pageSize', v); markDirty(); }),
       el('p', 'hint', 'Applies from your next search.'),
       segField('Infinite scroll', [true, false], S.infinite, v => v ? 'On' : 'Off', v => { S.infinite = v; store.set('infinite', v); observeSentinel(); render.endState(); }),
-      el('p', 'hint', 'Off: more results only load when you press the Next page button under the feed or its hotkey (N by default, change it under Hotkeys in the For you tab). Works in fullscreen too.'),
+      el('p', 'hint', 'Off: more results only load when you press the Next page button under the feed or its hotkey (N by default, change it in the Hotkeys tab). Works in fullscreen too.'),
       segField('Start loading more', [1, 2, 3, 5], S.aheadScreens, v => v + (v === 1 ? ' screen' : ' screens'), v => { S.aheadScreens = v; store.set('aheadScreens', v); observeSentinel(); }),
       el('p', 'hint', 'How far before the bottom of the feed the next page is requested. In fullscreen it loads when 5 posts remain.'),
       segField('Duplicate posts (same file, e.g. on two sites)', [false, true], S.dupes, v => v ? 'Show' : 'Hide', v => { S.dupes = v; store.set('dupes', v); markDirty(); }),
@@ -1932,6 +1935,7 @@ function renderCustomSites() {
 function renderHotkeys() {
   const d = el('div', 'fybox hk-box'); d.append(el('h3', null, 'Hotkeys'));
   d.append(el('p', 'hint', 'Click a key, then press the new one. Click it again to cancel. Numpad keys count as the same digit.'));
+  const bar = el('div', 'fybox hk-box'); bar.append(el('h3', null, 'Hotkey bar'));
   for (const a of Object.keys(HK_LABEL)) {
     const row = el('div', 'hkrow'); row.append(el('span', null, HK_LABEL[a]));
     const b = el('button', 'hkkey' + (S.capture === a ? ' capturing' : ''), S.capture === a ? 'press a key…' : keyName(S.hk[a]));
@@ -1941,8 +1945,9 @@ function renderHotkeys() {
   for (const [k, t] of HK_FIXED) { const row = el('div', 'hkrow'); row.append(el('span', null, t), el('kbd', null, k)); d.append(row); }
   const reset = el('button', 'btn ghost', 'Reset hotkeys to default');
   reset.onclick = () => { S.hk = { ...HK_DEFAULT }; store.set('hotkeys', S.hk); S.capture = null; renderSheet(); renderHints(); };
-  d.append(reset, segField('Hotkey bar', [true, false], S.hintsOn, v => v ? 'Shown' : 'Hidden', v => setHints(v)));
-  return d;
+  d.append(reset);
+  bar.append(segField('Hotkey bar', [true, false], S.hintsOn, v => v ? 'Shown' : 'Hidden', v => setHints(v)));
+  return [d, bar];
 }
 function tagListEditor(title, key, placeholder, s, after) {
   const wrap = el('div'); wrap.append(el('p', 'hint', title));
@@ -1981,7 +1986,6 @@ function renderForYouSettings() {
     catch (err) { toast(err.message); }
   }));
   box.append(el('p', 'hint', 'Learns from posts you like (8), dislike (2), super like (9, counts 3x by default; see the Votes tab) or super dislike (3) on the numpad (or the number row). Everything stays in a file on this computer (data/foryou.json). Nothing is sent to any site, and it never affects normal search. Off: the button disappears and nothing is learned.'));
-  box.append(renderHotkeys());
   view.append(
     segField('After voting, go to next post', [true, false], S.autoNext, v => v ? 'On' : 'Off', v => { S.autoNext = v; store.set('autoNext', v); }),
     segField('Fullscreen: fill the screen when it crops only a little', [true, false], S.fillFit, v => v ? 'On' : 'Off', v => { S.fillFit = v; store.set('fillFit', v); }),
