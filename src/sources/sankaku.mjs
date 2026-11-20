@@ -59,6 +59,20 @@ async function call(path, params, env, fetchImpl, retry = true, hdr = {}) {
   return data;
 }
 
+// Opt-in favorite sync: POST adds, DELETE removes the post from the logged-in account's favorites. `id` is Sankaku's own
+// post id string (from the post link). Single attempt, no retry; the caller must not let a failure here affect anything local.
+async function favorite(id, on, env, fetchImpl = fetch) {
+  if (!/^[A-Za-z0-9]{3,32}$/.test(String(id))) throw err('Bad Sankaku post id', 400);
+  if (!(env.SANKAKU_USERNAME && env.SANKAKU_PASSWORD)) throw err('Not logged in to Sankaku', 401);
+  const send = async () => fetchImpl(`${API}/posts/${id}/favorite?lang=en`, {
+    method: on ? 'POST' : 'DELETE', headers: { ...H, Authorization: await login(env, fetchImpl) }, signal: AbortSignal.timeout(20000)
+  });
+  let res = await send();
+  if (res.status === 401 && token) { token = null; res = await send(); } // expired token: log in once more
+  res.body?.cancel?.();
+  if (!res.ok) throw err(`Sankaku favorite ${on ? 'add' : 'remove'} failed (${res.status})`, res.status);
+}
+
 // Fresh CDN URLs per md5, filled by every search and by md5 lookups.
 const urls = new Map();
 const expiry = (u) => { try { return Number(new URL(u).searchParams.get('e')) * 1000 || 0; } catch { return 0; } };
@@ -150,6 +164,7 @@ export const sankaku = {
   minGap: 1000,
 
   configured() { return true; },
+  favorite,
   auth(env) {
     if (loginFailed?.who === `${env.SANKAKU_USERNAME}\n${env.SANKAKU_PASSWORD}`) return 'Login failed: ' + LOGIN_MSG;
     const who = env.SANKAKU_USERNAME && env.SANKAKU_PASSWORD ? `logged in as ${env.SANKAKU_USERNAME}` : 'public access (no login, some posts have no file)';

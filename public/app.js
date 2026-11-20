@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'infinite', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
+const PREFS = ['aheadScreens', 'infinite', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -127,7 +127,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: withHkDefaults(store.get('hotkeys', {})), hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
@@ -611,7 +611,7 @@ async function castVote(p, want) {
   const T = { 2: '⭐ Super liked', 1: '👍 Liked', '-1': '👎 Disliked', '-2': '⛔ Super disliked' };
   voteToast(next ? T[next] : ({ 2: 'Super like removed', 1: 'Like removed', '-1': 'Dislike removed', '-2': 'Super dislike removed' })[cur], next);
   const token = (castVote.n = (castVote.n || 0) + 1); (castVote.last ||= new Map()).set(k, token);
-  const body = { site: p.site, id: p.id, vote: next, strat: p.strat, md5: p.md5 || '', dive: S.mode === 'foryou' && !!S.fyState?.dive, post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type } };
+  const body = { site: p.site, id: p.id, vote: next, strat: p.strat, md5: p.md5 || '', dive: S.mode === 'foryou' && !!S.fyState?.dive, ...(p.site === 'sankaku' && S.skFav ? { skFav: true, prev: cur, link: p.link } : {}), post: { tags: p.tags.map(t => ({ name: t.name, type: t.type })), rating: p.rating, type: p.type } };
   const WAITS = [1500, 3000, 6000, 10000, 15000, 20000];
   try {
     if (next) saveSnapshot(p);
@@ -1871,7 +1871,11 @@ function renderSiteList() {
   const rc = el('label'), rcb = el('input'); rcb.type = 'checkbox'; rcb.checked = S.skRec;
   rcb.onchange = () => { S.skRec = rcb.checked; store.set('skRec', S.skRec); markDirty(); };
   rc.append(rcb, " Sankaku For you (uses your Sankaku account's recommendations)");
-  d.append(rc, el('p', 'hint', 'Only for searches with no tags. Read-only: your likes and votes are not sent to Sankaku.'));
+  d.append(rc, el('p', 'hint', 'Only for searches with no tags. Read-only: this does not send anything to Sankaku.'));
+  const sf = el('label'), sfb = el('input'); sfb.type = 'checkbox'; sfb.checked = S.skFav;
+  sfb.onchange = () => { S.skFav = sfb.checked; store.set('skFav', S.skFav); };
+  sf.append(sfb, ' Sankaku: sync likes to your Sankaku favorites');
+  d.append(sf, el('p', 'hint', 'Liking a Sankaku post adds it to your Sankaku favorites; removing the like (or disliking a liked post) removes it. Only that one post, only Sankaku, nothing else is sent. Past likes are not synced.'));
   if (!S.blocked['AI-generated']) {
     const ai = el('label'), acb = el('input'); acb.type = 'checkbox'; acb.checked = S.aiTagFix;
     acb.onchange = () => { S.aiTagFix = acb.checked; store.set('aiTagFix', S.aiTagFix); markDirty(); };

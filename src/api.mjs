@@ -149,6 +149,16 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
       if (route === 'vote') {
         const vote = fy.vote({ site: String(b.site), id: b.id, vote: b.vote, post: b.post, strat: b.strat, md5: b.md5, dive: b.dive === true });
         if (library && vote > 0) library.liked(`${b.site}:${b.id}`, posts?.get(`${b.site}:${b.id}`));
+        // Opt-in (client flag `skFav`): mirror a Sankaku like/unlike to the account's favorites. Only a like adds; removing the
+        // like, or disliking a post that was liked, removes. Fire and forget: the local vote is already saved.
+        if (b.skFav === true && b.site === 'sankaku' && SOURCES.sankaku?.favorite && (vote > 0 || (Number(b.prev) > 0 && vote <= 0))) {
+          const m = /^https:\/\/chan\.sankakucomplex\.com\/posts\/([A-Za-z0-9]+)$/.exec(String(b.link || posts?.get(`${b.site}:${b.id}`)?.link || ''));
+          if (m) {
+            const on = vote > 0;
+            polite('sankaku', () => SOURCES.sankaku.favorite(m[1], on, env, fetchImpl), SOURCES.sankaku.minGap)
+              .catch(e => console.log(`  [sankaku] favorite ${on ? 'add' : 'remove'} failed: ${e.message}`));
+          }
+        }
         return json({ vote });
       }
       if (route === 'reset-learning') {
