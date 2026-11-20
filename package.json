@@ -13,6 +13,6 @@
   },
   "optionalDependencies": {
     "onnxruntime-node": "^1.20.0",
-    "sharp": "^0.33.0"
+    "sharp": "^0.35.5"
   }
 }
