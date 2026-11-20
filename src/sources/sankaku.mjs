@@ -66,7 +66,15 @@ async function call(path, params, env, fetchImpl, retry = true, hdr = {}) {
   }
   const opHint = res.status >= 500 && /(^|\s)(~|[^\s]*\*)/.test(params.tags || '') ? ' (too many ~ or * tags? try fewer)' : '';
   if (!data) throw Object.assign(err(`Unexpected answer from Sankaku (${res.status})${opHint}`, res.status === 403 ? 403 : 502), { http: res.status });
-  if (!res.ok || data?.success === false) throw Object.assign(err(`Sankaku: ${code.split('__').pop().replace(/[-_]/g, ' ') || res.status}${opHint}`, res.status >= 500 ? 502 : 400), { http: res.status });
+  const short = code.split('__').pop();
+  const NICE = {
+    'operator-tags-limit': 'Too many ~ or * tags for Sankaku: use fewer.',
+    'search-query-timeout': 'Sankaku took too long on this search: try fewer or simpler tags.',
+    'account_is_private': 'That Sankaku account is private, so its favorites/uploads can\'t be read.',
+    'invalid-parameters': 'Sankaku rejected this search (invalid parameters): check the tags and sort.',
+  };
+  if ((!res.ok || data?.success === false) && NICE[short]) throw Object.assign(err(NICE[short], res.status >= 500 ? 502 : 400), { http: res.status });
+  if (!res.ok || data?.success === false) throw Object.assign(err(`Sankaku: ${short.replace(/[-_]/g, ' ') || res.status}${opHint}`,res.status >= 500 ? 502 : 400), { http: res.status });
   return data;
 }
 
@@ -183,6 +191,8 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   else if (sort === 'popular') parts.push('order:popularity');
   else if (sort === 'random') parts.push('order:random');
   else if (sort === 'updated') parts.push('order:change_desc');
+  else if (sort === 'recfav') parts.push('order:recently_favorited');
+  else if (sort === 'recvote') parts.push('order:recently_voted');
   if (rating === 'safe') parts.push('rating:s');
   else if (rating === 'questionable') parts.push('rating:q');
   else if (rating === 'explicit') parts.push('rating:e');

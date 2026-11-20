@@ -30,7 +30,8 @@
   <div class="filters">
     <div class="seg" id="sites" role="group" aria-label="Sites to search"></div>
     <label>Sort <select id="sort">
-      <option value="id">Newest</option><option value="score">Score</option><option value="popular">Popular</option><option value="updated">Updated</option><option value="random">Random</option><option value="phone">Fits my screen</option>
+      <option value="id">Newest</option><option value="score">Score</option><option value="popular" data-sk hidden disabled>Popular (Sankaku)</option><option value="updated">Updated</option><option value="random">Random</option><option value="phone">Fits my screen</option>
+      <option value="recfav" data-sk hidden disabled>Recently favorited (Sankaku)</option><option value="recvote" data-sk hidden disabled>Recently voted (Sankaku)</option>
     </select></label>
     <div class="seg" id="rating" role="group" aria-label="Rating">
       <button data-r="all" class="on">All</button><button data-r="safe">Safe</button><button data-r="questionable">Questionable</button><button data-r="explicit">Explicit</button>

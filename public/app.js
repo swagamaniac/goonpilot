@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'infinite', 'tagSearch', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
+const PREFS = ['aheadScreens', 'infinite', 'tagSearch', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skSorts', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -128,7 +128,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: withHkDefaults(store.get('hotkeys', {})), hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), skArtist: store.get('skArtist', true), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), skArtist: store.get('skArtist', true), skSorts: store.get('skSorts', false),aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
@@ -1133,6 +1133,9 @@ q.addEventListener('blur', () => setTimeout(() => { sug.hidden = true; }, 120));
 $('searchBtn').onclick = () => { newSearch(); };
 
 function syncFilterUi() {
+  // Sankaku-only sorts (Settings > Sites > Sankaku, off by default): shown only when enabled, otherwise fall back to Newest.
+  document.querySelectorAll('#sort option[data-sk]').forEach(o => { o.hidden = o.disabled = !S.skSorts; });
+  if (!S.skSorts && /^(popular|recfav|recvote)$/.test(S.sort)) S.sort = 'id';
   $('sort').value = S.sort; $('minScore').value = S.minScore; $('scoreDir').textContent = (S.scoreMax ? 'Max' : 'Min') + ' score ⇅';
   [...$('rating').children].forEach(x => x.classList.toggle('on', x.dataset.r === S.rating));
   [...$('orient').children].forEach(x => x.classList.toggle('on', x.dataset.o === S.orient));
@@ -1991,6 +1994,10 @@ function renderSiteList() {
   };
   sd.append(exp, el('p', 'hint', 'Manual and optional. Sends your already-liked Sankaku posts to your Sankaku favorites; nothing else leaves your PC.'));
   sd.append(imp, el('p', 'hint', 'Manual, one time as often as you like. Imported favorites count as likes for For you (unless "Sankaku likes" is set to Ignored). Posts without a file on Sankaku are skipped.'));
+  const ss = el('label'), ssb = el('input'); ssb.type = 'checkbox'; ssb.checked = S.skSorts;
+  ssb.onchange = () => { S.skSorts = ssb.checked; store.set('skSorts', S.skSorts); syncFilterUi(); markDirty(); };
+  ss.append(ssb, ' Sankaku: extra sorts (popular, recently favorited, recently voted)');
+  sd.append(ss, el('p', 'hint', 'Adds three Sort choices that mainly make sense on Sankaku. Popular is hidden otherwise. Off by default. On other sites Popular still works where the site has it; the other two act like Newest.'));
   const sa = el('label'), sab = el('input'); sab.type = 'checkbox'; sab.checked = S.skArtist;
   sab.onchange = () => { S.skArtist = sab.checked; store.set('skArtist', S.skArtist); };
   sa.append(sab, ' Sankaku: skip artist searches unless the artist is known to be there');

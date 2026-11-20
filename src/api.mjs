@@ -520,7 +520,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       exclude: list(p.get('exc')),
       or: list(p.get('or')),
       orGroups: String(p.get('og') || '').split('|').map(list).filter(g => g.length).slice(0, 10),
-      sort: ['id', 'score', 'popular', 'updated', 'random', 'phone'].includes(p.get('sort')) ? p.get('sort') : 'id',
+      sort: ['id', 'score', 'popular', 'updated', 'random', 'phone', 'recfav', 'recvote'].includes(p.get('sort')) ? p.get('sort') : 'id',
       rating: ['all', 'safe', 'questionable', 'explicit'].includes(p.get('rating')) ? p.get('rating') : 'all',
       minScore: int(p.get('min'), 0, 0, 100000),
       maxScore: int(p.get('max'), 0, 0, 100000),
