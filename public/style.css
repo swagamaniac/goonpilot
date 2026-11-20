@@ -299,7 +299,7 @@ body.selecting .post .media { cursor: pointer; }
 .post.selected { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 10px; }
 .post.selected .media::after { content: '✓'; position: absolute; top: 8px; right: 8px; background: var(--accent); color: var(--accent-ink); border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; font-weight: 700; }
 
-@media (hover: none) and (pointer: coarse) { #hintBar, #hintBtn, #vHint, .hk-box, .tabs button[data-tab="hotkeys"] { display: none !important; } }
+@media (hover: none) and (pointer: coarse) { #hintBar, #vHint, .hk-box, .tabs button[data-tab="hotkeys"] { display: none !important; } }
 
 body.swipe-votes .viewer, body.swipe-votes .vscroll { touch-action: pan-y; }
 .heartburst { position: fixed; z-index: 90; font-size: 72px; line-height: 1; color: #ff4d6d; pointer-events: none; transform: translate(-50%, -50%); animation: hb .75s ease-out forwards; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
@@ -390,3 +390,15 @@ body.dragnow { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 .organizing .item > *, .organizing .cathead > :not(.cattitle):not(.iconbtn) { pointer-events: none; }
 .organizing .fybox.fold > :not(h3) { pointer-events: none; }
 .organizing .item, .organizing .cathead, .organizing .fybox.fold { outline: 1px dashed var(--line); outline-offset: 1px; }
+
+/* Mobile width fix: the sticky header is a grid whose single column grew to the widest child (the site row with many sites),
+   widening the whole page. Keep the column at the viewport width and let wide rows scroll/wrap inside themselves. */
+.bar { grid-template-columns: minmax(0, 1fr); }
+.filters > * { max-width: 100%; min-width: 0; }
+.filters .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.filters .seg::-webkit-scrollbar { display: none; }
+.filters .seg button { flex: none; white-space: nowrap; }
+html, body { overflow-x: clip; }
+@media (max-width: 700px) {
+  .results { grid-template-columns: minmax(0, 1fr); width: 100%; box-sizing: border-box; }
+}

@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'infinite', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
+const PREFS = ['aheadScreens', 'infinite', 'tagSearch', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -111,6 +111,7 @@ const S = {
   pageSize: store.get('pageSize', 20),
   aheadScreens: store.get('aheadScreens', 3),
   infinite: store.get('infinite', true),
+  tagSearch: store.get('tagSearch', false),
   original: store.get('original', false),
   autoDelay: store.get('autoDelay', 5),
   videoQuality: store.get('videoQuality', 'medium'),
@@ -718,7 +719,6 @@ function renderHints() {
 }
 function setHints(on) { S.hintsOn = on; store.set('hintsOn', on); renderHints(); }
 $('hintBar').onclick = () => setHints(false);
-$('hintBtn').onclick = () => setHints(!S.hintsOn);
 $('vHint').onclick = () => setHints(!S.hintsOn);
 
 const HISTORY_MAX = 20;
@@ -948,7 +948,7 @@ const render = {
       const si = t.kind === 'super' ? S.supers.findIndex(s => s.name === t.name) : -1;
       if (si >= 0) {
         const ed = el('button', 'x', '✎'); ed.title = 'Edit supertag'; ed.setAttribute('aria-label', 'Edit supertag ' + t.name);
-        ed.onclick = () => { stEdit = { index: si, name: S.supers[si].name, tags: toTagObjs(S.supers[si].tags) }; openSheet('super'); };
+        ed.onclick = () => { stEdit = { index: si, name: S.supers[si].name, tags: toTagObjs(S.supers[si].tags) }; openSheet('artists'); };
         chip.append(ed);
       }
       chip.append(x); c.append(chip);
@@ -1196,7 +1196,7 @@ function observeSentinel() {
 let resizeT;
 window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(observeSentinel, 300); });
 
-let tab = 'saved';
+let tab = 'artists';
 // Remember how far down each tab was scrolled (this session), restored when it opens again.
 const sheetScroll = {};
 const saveSheetScroll = () => { if (!$('sheetRoot').hidden && tab) sheetScroll[tab] = document.querySelector('.sheet').scrollTop; };
@@ -1210,7 +1210,6 @@ function openSheet(t) {
   if (switching) { const sh = document.querySelector('.sheet'), y = sheetScroll[t] || 0; sh.scrollTop = y; requestAnimationFrame(() => { sh.scrollTop = y; }); setTimeout(() => { sh.scrollTop = y; }, 300); }
 }
 const closeSheet = () => { saveSheetScroll(); $('sheetRoot').hidden = true; stEdit = null; S.capture = null; };
-$('libBtn').onclick = () => openSheet(tab === 'settings' ? 'saved' : tab);
 $('setBtn').onclick = () => { openSheet('settings'); lib('library').then(r => { S.lib = r; if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {}); loadFyState().then(() => { if (!$('sheetRoot').hidden && tab === 'settings') renderSheet(); }); };
 $('sheetBg').onclick = closeSheet;
 $('sheetX').onclick = e => { e.stopPropagation(); closeSheet(); };
@@ -1375,9 +1374,26 @@ function renderSheet() { const sh = document.querySelector('.sheet'), y = sh.scr
 function renderSheetBody() {
   const body = $('sheetBody'); body.replaceChildren();
   body.classList.toggle('organizing', UI.isTouch() && orgMode);
-  if (['saved', 'artists', 'super', 'settings', 'fy', 'hotkeys'].includes(tab)) queueMicrotask(() => { const mb = modeBar(['saved', 'artists', 'super'].includes(tab)); if (mb) body.prepend(mb); });
+  if (['artists', 'settings', 'fy', 'hotkeys'].includes(tab)) queueMicrotask(() => { const mb = modeBar(tab === 'artists' && !stEdit); if (mb) body.prepend(mb); });
+  if (tab === 'artists') {
+    if (stEdit) renderSupertagEditor(body);
+    else {
+      const sec = (title, fn) => { const t = el('div'); fn(t); body.append(group(title, ...t.childNodes)); };
+      sec('Saved searches', renderSavedSearches); sec('Supertags', renderSupertags); sec('Favorites', renderArtists);
+      queueMicrotask(() => foldGroups(body));
+    }
+  } else if (tab === 'fy') {
+    renderFyTab(body);
+  } else if (tab === 'hotkeys') {
+    body.append(...renderHotkeys());
+    queueMicrotask(() => foldGroups(body));
+  } else {
+    renderSettingsTab(body);
+  }
+}
+function renderSavedSearches(body) {
   const list = el('div', 'list');
-  if (tab === 'saved') {
+  {
     const save = el('button', 'btn', 'Save current search'); save.disabled = !S.terms.length;
     save.onclick = () => {
       S.saved.unshift({ sites: [...S.sites], name: S.terms.map(termLabel).join(' '), terms: structuredClone(S.terms), sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
@@ -1400,7 +1416,10 @@ function renderSheetBody() {
     });
     makeSortable([...list.children], it => it, (f, t) => { moveTo(S.saved, f, t); store.set('saved', S.saved); renderSheet(); });
     body.append(list, el('p', 'hint', 'Stored only in this browser. Opening a saved search fills it in; press Search to run it.'));
-  } else if (tab === 'history') {
+  }
+}
+function renderHistory(body) {
+  {
     if (!S.history.length) body.append(el('p', 'hint', 'No searches yet. Your last 20 searches show up here, even after closing the app.'));
     else { const clr = el('button', 'btn ghost', 'Clear history'); clr.onclick = () => { S.history = []; store.set('history', []); renderSheet(); }; body.append(clr); }
     S.history.forEach(hh => {
@@ -1411,11 +1430,10 @@ function renderSheetBody() {
       sv.onclick = () => { S.saved.unshift({ sites: hh.sites, name: hh.terms.map(termLabel).join(' '), terms: structuredClone(hh.terms), sort: hh.sort, rating: hh.rating, minScore: hh.minScore, scoreMax: hh.scoreMax }); store.set('saved', S.saved); toast('Saved'); };
       it.append(g, sv); body.append(it);
     });
-  } else if (tab === 'artists') {
-    renderArtists(body);
-  } else if (tab === 'super') {
-    renderSupertags(body);
-  } else if (tab === 'fy') {
+  }
+}
+function renderFyTab(body) {
+  {
     if (!S.fyState) loadFyState().then(() => { if (S.fyState && !$('sheetRoot').hidden && tab === 'fy') renderSheet(); }).catch(() => {});
     // Vote weights (was the Votes tab) live here as their own foldable section.
     const pr = S.fyState?.prefs, votes = [];
@@ -1434,17 +1452,20 @@ function renderSheetBody() {
     const [main, ...rest] = renderForYouSettings();
     body.append(main, ...votes, ...rest, ...renderVision());
     queueMicrotask(() => foldGroups(body));
-  } else if (tab === 'hotkeys') {
-    body.append(...renderHotkeys());
-    queueMicrotask(() => foldGroups(body));
-  } else {
+  }
+}
+function renderSettingsTab(body) {
+  {
     const pages = !!S.status?.pages;
     queueMicrotask(() => foldGroups(body));
+    const hist = el('div'); renderHistory(hist);
     body.append(group('Feed',
       segField('Posts per request (per site)', [10, 20, 50, 100], S.pageSize, String, v => { S.pageSize = v; store.set('pageSize', v); markDirty(); }),
       el('p', 'hint', 'Applies from your next search.'),
       segField('Infinite scroll', [true, false], S.infinite, v => v ? 'On' : 'Off', v => { S.infinite = v; store.set('infinite', v); observeSentinel(); render.endState(); }),
       el('p', 'hint', 'Off: more results only load when you press the Next page button under the feed or its hotkey (N by default, change it in the Hotkeys tab). Works in fullscreen too.'),
+      segField('Clicking a tag searches immediately', [false, true], S.tagSearch, v => v ? 'On' : 'Off', v => { S.tagSearch = v; store.set('tagSearch', v); }),
+      el('p', 'hint', 'On: tapping a tag name in the post details starts the search right away. Off: it only fills in the search box and you press Search.'),
       segField('Start loading more', [1, 2, 3, 5], S.aheadScreens, v => v + (v === 1 ? ' screen' : ' screens'), v => { S.aheadScreens = v; store.set('aheadScreens', v); observeSentinel(); }),
       el('p', 'hint', 'How far before the bottom of the feed the next page is requested. In fullscreen it loads when 5 posts remain.'),
       segField('Duplicate posts (same file, e.g. on two sites)', [false, true], S.dupes, v => v ? 'Show' : 'Hide', v => { S.dupes = v; store.set('dupes', v); markDirty(); }),
@@ -1463,7 +1484,7 @@ function renderSheetBody() {
       segField('Keep liked pictures on this computer', [false, true], !!S.lib?.enabled, v => v ? 'On' : 'Off', async v => { try { S.lib = await lib('library', { enabled: v }); } catch (err) { toast(err.message); } renderSheet(); }),
       el('p', 'hint', `When on, a post you like is saved to data/library/ using the copy already loaded on screen (nothing is downloaded twice), and is shown from disk after that. Off: nothing new is saved; saved files stay and are still used.${S.lib ? ` Saved so far: ${S.lib.count}.` : ''}`)
     );
-    body.append(view);
+    body.append(view, group('Search history', ...hist.childNodes));
     const logins = group('Site logins');
     for (const src of S.status?.sources || []) {
       logins.append(el('p', src.configured ? 'ok' : 'hint', `${src.label}: ${src.auth}`));
@@ -2331,7 +2352,7 @@ const viewer = {
         const row = el('span', 'tagrow');
         const nb = el('button', 'tagname'); nb.title = 'Search only this tag (on this site)';
         nb.append(el('span', 'dot t-' + type), el('span', null, t.name));
-        nb.onclick = () => { this.close(); fillSearch([p.site], [{ kind: 'tag', name: t.name, mod: '+', type }]); };
+        nb.onclick = () => { this.close(); fillSearch([p.site], [{ kind: 'tag', name: t.name, mod: '+', type }]); if (S.tagSearch) newSearch(); };
         const cnt = t.count ? el('span', 'tagcnt', fmt(t.count)) : null;
         const plus = el('button', 'mini', '+'); plus.title = 'Add to search'; plus.setAttribute('aria-label', 'Add ' + t.name);
         plus.onclick = () => addTerm(t, '+', type);
