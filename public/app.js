@@ -12,6 +12,19 @@ function timeAgo(iso) {
   return Math.floor(s / 31557600) + 'y ago';
 }
 'use strict';
+// --- input-kind helper (shared): touch vs mouse, live. Sets <html data-input="touch|mouse">; CSS: html[data-input=touch] ...
+const UI = (() => {
+  const mq = matchMedia('(hover: none) and (pointer: coarse)'), narrow = matchMedia('(max-width: 700px)');
+  const root = document.documentElement, subs = new Set();
+  const api = {
+    isTouch: () => mq.matches, isDesktop: () => !mq.matches, isNarrow: () => narrow.matches,
+    onChange: fn => { subs.add(fn); return () => subs.delete(fn); }, // fn({touch, narrow}); returns unsubscribe
+  };
+  const sync = () => { root.dataset.input = mq.matches ? 'touch' : 'mouse'; root.dataset.narrow = narrow.matches ? '1' : '0'; subs.forEach(f => { try { f({ touch: mq.matches, narrow: narrow.matches }); } catch {} }); };
+  mq.addEventListener('change', sync); narrow.addEventListener('change', sync); sync();
+  return api;
+})();
+// --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
 const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
