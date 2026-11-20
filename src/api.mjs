@@ -379,7 +379,22 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   if (url.pathname === '/api/vision/tags') {
     const bad = visionGuard(); if (bad) return bad;
     const m = String(url.searchParams.get('md5') || '').toLowerCase();
-    return json({ tags: ctx.vision && /^[0-9a-f]{32}$/.test(m) ? (ctx.vision.tags(m) || []) : [] });
+    const info = ctx.vision && /^[0-9a-f]{32}$/.test(m) ? (ctx.vision.tagInfo?.(m) || null) : null;
+    return json({ tags: info ? info.map(e => e.n) : ctx.vision && /^[0-9a-f]{32}$/.test(m) ? (ctx.vision.tags(m) || []) : [], info: info || undefined });
+  }
+  // Optional Hydra tagger: ?mode=wd|hydra|both &max=5..200 &do=start|stop (start is only ever a click; the server never starts it by itself).
+  if (url.pathname === '/api/vision/tagger') {
+    const bad = visionGuard(); if (bad) return bad;
+    if (!ctx.vision?.setTagger) return json({ error: 'not available' }, 409);
+    const mo = url.searchParams.get('mode'), mx = url.searchParams.get('max'), act = url.searchParams.get('do');
+    if (mo || mx) ctx.vision.setTagger(mo, mx);
+    if (act === 'start' && request.method === 'POST') await ctx.vision.tagStart();
+    else if (act === 'stop' && request.method === 'POST') ctx.vision.tagStop();
+    return json(await ctx.vision.status());
+  }
+  if (url.pathname === '/api/vision/log') {
+    const bad = visionGuard(); if (bad) return bad;
+    return ctx.vision?.logView ? json(ctx.vision.logView()) : json({ error: 'not available' }, 409);
   }
   if (url.pathname === '/api/vision/setup') {
     const bad = visionGuard(); if (bad) return bad;

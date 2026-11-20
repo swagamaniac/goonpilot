@@ -1846,14 +1846,49 @@ function renderProfiles() {
   }
   return d;
 }
+// Optional Hydra tagger (needs the extras from the wiki page "Image analysis"): tag source, max tags, Start / Stop and a small log.
+function renderTagger(tg, call, reshow) {
+  const w = el('div', 'taggerbox'), lab = el('label'), sel = document.createElement('select'), mx = document.createElement('input');
+  for (const [v, t] of [['wd', 'WD tagger only'], ['hydra', 'Hydra only'], ['both', 'Both, best confidence']]) { const op = document.createElement('option'); op.value = v; op.textContent = t; sel.append(op); }
+  sel.value = tg.mode; mx.type = 'number'; mx.min = 5; mx.max = 200; mx.value = tg.max; mx.style.width = '4.5em';
+  const set = () => call('/api/vision/tagger?mode=' + sel.value + '&max=' + (mx.value || 60)).then(reshow).catch(() => toast('Could not change it'));
+  sel.onchange = set; mx.onchange = set;
+  lab.append('AI tags from: ', sel, ' max ', mx, ' tags'); w.append(lab);
+  if (!tg.available) { w.append(el('p', 'hint', 'The Hydra tagger is optional and not installed. Setup: see the wiki page "Image analysis". Without it, only the WD tagger is used.')); return w; }
+  w.append(el('p', 'hint', `${tg.hydraTags || 0} pictures have Hydra tags. It only tags pictures analysed while it is running, and only starts when you press Start.`));
+  const b = el('button', 'btn', tg.running ? '⏹ Stop Hydra tagger' : '▶ Start Hydra tagger');
+  b.onclick = async () => {
+    b.disabled = true; b.textContent = tg.running ? 'Stopping…' : 'Starting… (loading the model can take a minute)';
+    try { const j = await fetch('/api/vision/tagger?do=' + (tg.running ? 'stop' : 'start'), { method: 'POST', headers: { 'x-goonpilot': '1' } }).then(r => r.json()); if (!tg.running && !j.tagger?.running) toast('Hydra did not start: ' + (j.tagger?.error || 'see the log')); reshow(j); }
+    catch { toast('Could not reach the server'); b.disabled = false; }
+  };
+  const row = el('div', 'inline'); row.append(b, el('span', 'hint', tg.running ? ' running (until Stop)' : ' stopped')); w.append(row);
+  const lg = document.createElement('details'), pre = el('pre', 'hint'); pre.style.cssText = 'white-space:pre-wrap;max-height:18em;overflow:auto;font-size:.8em'; lg.append(el('summary', null, 'Tagger log'), pre);
+  let t = null;
+  const refresh = () => { clearTimeout(t); if (!lg.open || !lg.isConnected) return;
+    call('/api/vision/log').then(j => {
+      if (j.error) { pre.textContent = j.error; return; }
+      const hm = (x) => new Date(x).toLocaleTimeString();
+      pre.textContent = [`WD tagger: ${j.wd.ready ? 'ready (' + (j.wd.device || '?') + ')' : 'not loaded'}${j.wd.busy ? ', working' : ''} · queue ${j.wd.queued} · ${j.wd.analysed} analysed${j.wd.error ? ' · ERROR ' + j.wd.error : ''}`,
+        `Hydra tagger: ${j.tagger.running ? 'running' + (j.tagger.device ? ' (' + j.tagger.device + ')' : '') : j.tagger.starting ? 'starting…' : 'stopped'} · ${j.tagger.hydraTags} pictures tagged${j.tagger.error ? ' · ERROR ' + j.tagger.error : ''}`, '',
+        ...j.events.slice().reverse().map(e => `${hm(e.t)} ${e.k.padEnd(7)} ${e.md5 ? e.md5 + ' ' : ''}${e.m}${e.err ? '  <-- ERROR' : ''}`)].join('\n');
+    }).catch(() => { pre.textContent = 'Could not reach the server'; }).finally(() => { t = setTimeout(refresh, 3000); });
+  };
+  lg.ontoggle = refresh; w.append(lg);
+  return w;
+}
 function renderVision() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Image analysis'));
   const info = el('p', 'hint', 'checking...'); d.append(info);
   const H = { 'x-goonpilot': '1' }, call = (p) => fetch(p, { headers: H }).then(r => r.json());
   const box = (label, on, path) => { const lab = el('label'), cb = el('input'); cb.type = 'checkbox'; cb.checked = on; cb.onchange = () => call(path + (cb.checked ? 1 : 0)).then(show).catch(() => toast('Could not change it')); lab.append(cb, ' ' + label); return lab; };
   const show = (st) => {
-    d.querySelectorAll('label').forEach(x => x.remove());
-    if (!st.packages || !st.model) { info.textContent = 'Not set up. Run maintenance\\setup-vision.bat once.'; return; }
+    d.querySelectorAll('label').forEach(x => x.remove()); d.querySelector('.taggerbox')?.remove();
+    if (!st.packages || !st.model) { // the WD tagger is optional: the Hydra tagger can be used without it
+      info.textContent = 'The WD tagger is not set up (optional). Run maintenance\\setup-vision.bat to add it.';
+      if (st.tagger) d.append(renderTagger(st.tagger, call, show));
+      return;
+    }
     info.textContent = (st.ready ? `Ready${st.device ? ' on ' + st.device : ''}. ` : 'Not ready: ' + (st.error || 'loading') + '. ') + st.analysed + ' pictures analysed, ' + (st.queued || 0) + ' in queue' + (st.thumbQueued ? ` (+${st.thumbQueued} thumbnails)` : '') + (st.last ? ` · last: ${st.last.replace(/^[0-9a-f]{8} /, '')}` : '') + (st.done || st.failed ? ` (this session: ${st.done} done, ${st.failed} failed)` : '') + '.';
     d.append(box('On (pictures you open in For you)', st.enabled, '/api/vision/toggle?on='));
     if (st.local) import('./local.js').then(m => m.visionExtras?.(d, st, box)).catch(() => {});
@@ -1866,6 +1901,7 @@ function renderVision() {
     d.append(box('AI tags count in For you scoring', o.aiTags !== false, '/api/vision/opt?k=aiTags&on='),
       box('Look counts in For you scoring', o.look !== false, '/api/vision/opt?k=look&on='),
       box('Also analyse thumbnails that already loaded (low priority, full images first)', o.thumbs !== false, '/api/vision/opt?k=thumbs&on='));
+    if (st.tagger) d.append(renderTagger(st.tagger, call, show));
   };
   call('/api/vision/status').then(show).catch(() => { info.textContent = 'Server not reachable.'; });
   return [d];
@@ -2339,7 +2375,10 @@ const viewer = {
       const sec = el('section'), box = el('div', 'aitags', 'analysing...'); sec.append(el('h3', null, 'AI tags'), box); d.append(sec);
       const load = (tries) => fetch('/api/vision/tags?md5=' + p.md5, { headers: { 'x-goonpilot': '1' } }).then(r => r.json()).then(j => {
         if (!box.isConnected) return;
-        if (j.tags?.length) box.textContent = j.tags.join(', ');
+        if (j.info?.length) { // confidence % per tag; hover for the WD / Hydra split
+          box.textContent = ''; box.title = 'Confidence = how far above each tag\'s own threshold';
+          j.info.forEach((e, i) => { const sp = el('span', 'aitag', e.p == null ? e.n : e.n + ' ' + e.p + '%'); sp.title = [e.wd != null ? 'WD ' + e.wd + '%' : '', e.hy != null ? 'Hydra ' + e.hy + '%' : ''].filter(Boolean).join(' · '); box.append(sp, i < j.info.length - 1 ? ', ' : ''); });
+        } else if (j.tags?.length) box.textContent = j.tags.join(', ');
         else if (tries > 0) setTimeout(() => load(tries - 1), 2000);
         else box.textContent = 'none yet (analysis off, or still waiting for it)';
       }).catch(() => { box.textContent = ''; });

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, createWriteStream, statSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, createWriteStream, statSync, unlinkSync, appendFileSync } from 'node:fs';
+import { createHydraTagger } from './hydratags.mjs';
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -103,16 +104,48 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     const input = new Float32Array(448 * 448 * 3);
     for (let i = 0; i < 448 * 448; i++) { input[i * 3] = big[i * 3 + 2]; input[i * 3 + 1] = big[i * 3 + 1]; input[i * 3 + 2] = big[i * 3]; }
     const out = await session.run(input), p = out.p, hits = [];
-    labels.forEach((l, i) => { if ((l.cat === 0 && p[i] > GEN_T) || (l.cat === 4 && p[i] > CHAR_T)) hits.push([l.name, p[i]]); });
+    labels.forEach((l, i) => { if ((l.cat === 0 && p[i] > GEN_T) || (l.cat === 4 && p[i] > CHAR_T)) hits.push([l.name, p[i], l.cat === 4 ? CHAR_T : GEN_T]); });
     hits.sort((a, b) => b[1] - a[1]);
-    return { t: hits.slice(0, MAX_TAGS).map(h => h[0]), look: lookFeatures(small), h: dHash(gray), at: Date.now() };
+    // tm = confidence % per tag: how far above that tag's own threshold (comparable with the Hydra tagger's numbers).
+    const top = hits.slice(0, MAX_TAGS);
+    return { t: top.map(h => h[0]), tm: top.map(h => Math.round(100 * Math.min(1, Math.max(0, (h[1] - h[2]) / (1 - h[2]))))), look: lookFeatures(small), h: dHash(gray), at: Date.now() };
+  }
+
+  // Tagger log: in-memory ring (last 300) + data/vision-log.txt (rotated at 1 MB). Shown in Settings > Image analysis.
+  const evRing = [], logFile = path.join(dir, 'vision-log.txt'); let logN = 0;
+  const logEv = (kind, msg, md5 = '', err = false) => {
+    const e = { t: Date.now(), k: kind, m: String(msg).slice(0, 300), md5: md5 ? md5.slice(0, 8) : '', err }; evRing.push(e); if (evRing.length > 300) evRing.shift();
+    try { if (++logN % 200 === 1 && existsSync(logFile) && statSync(logFile).size > 1e6) renameSync(logFile, logFile + '.old'); appendFileSync(logFile, `${new Date(e.t).toISOString()} ${kind.padEnd(7)} ${e.md5 ? e.md5 + ' ' : ''}${e.m}${err ? ' [ERROR]' : ''}\n`); } catch {}
+  };
+  // Optional Hydra tagger (needs its own extras; never started by the server itself, only by the Start button).
+  const hydra = createHydraTagger({ root: path.dirname(dir), dir, log, ev: logEv });
+  const TAGGERS = ['wd', 'hydra', 'both'];
+  const taggerMode = () => TAGGERS.includes(get().tagger) ? get().tagger : 'wd'; // Hydra is opt-in
+  const tagMax = () => Math.min(200, Math.max(5, Number(get().tagMax) || 60));
+  // Hydra only: the WD tagger is not used at all (and may not be installed); WD needs a model session, Hydra needs a running tagger.
+  const live = () => taggerMode() === 'hydra' ? hydra.running() : !!session;
+  async function hydraTag(md5, buf) {
+    if (taggerMode() === 'wd' || !hydra.running() || hydra.has(md5)) return;
+    try { await hydra.tag(md5, !libs ? buf : await libs.sharp(buf, { failOn: 'none', limitInputPixels: 1e8 }).flatten({ background: '#ffffff' }).resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer()); }
+    catch (e) { logEv('hydra', 'failed: ' + e.message, md5, true); }
+  }
+  // -> [{ n: tag, p: combined confidence %, wd: WD %, hy: Hydra % }] or null. A tag both models give gets 1-(1-a)(1-b); the best tagMax() win.
+  function tagInfo(md5) {
+    const it = get().items[md5], mode = taggerMode(), h = mode === 'wd' ? null : hydra.tags(md5);
+    const nw = it?.t?.length || 0, wdOf = (i) => it.tm?.length === nw ? it.tm[i] : Math.round(100 * Math.max(0.05, 1 - i / nw)); // older analyses have no stored %: rank estimate
+    if (!h?.length) return it?.t ? it.t.map((t, i) => ({ n: t, p: wdOf(i), wd: wdOf(i), hy: null })) : null;
+    const sc = new Map();
+    if (mode === 'both' && it?.t) it.t.forEach((t, i) => sc.set(t, { n: t, wd: wdOf(i), hy: null }));
+    for (const [t, m] of h) { const e = sc.get(t); if (e) e.hy = m; else sc.set(t, { n: t, wd: null, hy: m }); }
+    for (const e of sc.values()) { const a = (e.wd ?? 0) / 100, b = (e.hy ?? 0) / 100; e.p = Math.round((1 - (1 - a) * (1 - b)) * 100); }
+    return [...sc.values()].sort((x, y) => y.p - x.p).slice(0, tagMax());
   }
 
   // Thumbnails the server already proxied are analysed at low priority (opt 'thumbs'), full images first.
   const thumbQ = [];
   // A full image always wins: drop a waiting thumbnail job for the same post so it can't block the full analysis.
   const dropThumb = (md5) => { const i = thumbQ.findIndex(j => j.md5 === md5); if (i >= 0) { thumbQ.splice(i, 1); queued.delete(md5); } };
-  const full = (md5) => { const it = get().items[md5]; return !!it && !it.th; };
+  const full = (md5) => { if (taggerMode() === 'hydra') return hydra.has(md5); const it = get().items[md5]; return !!it && !it.th; };
   function tapThumb(res, u) {
     const m = /([0-9a-f]{32})\.(?:jpe?g|png|gif|webp|avif)(?:[?#]|$)/i.exec(u) || /^sankaku:([0-9a-f]{32}):preview$/.exec(u); if (!m || !libs || !api.opt('thumbs')) return res;
     const md5 = m[1].toLowerCase(); if (full(md5)) return res;
@@ -143,14 +176,15 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
         const job = queue.length ? queue.shift() : thumbQ.shift(); queued.delete(job.md5);
         if (job.th && get().items[job.md5]) continue;
         try {
+          if (taggerMode() === 'hydra') { if (!job.th) await hydraTag(job.md5, job.buf || readFileSync(job.file)); await sleep(300); continue; }
           if (!(await ensureSession())) { queue.length = 0; queued.clear(); break; }
-          const t0 = Date.now(), r = await analyse(job.buf || readFileSync(job.file));
+          const t0 = Date.now(), src = job.buf || readFileSync(job.file), r = await analyse(src); if (!job.th) hydraTag(job.md5, src);
           const items = get().items, old = items[job.md5];
           if (job.th && old && !old.th) { /* full analysis already stored */ }
           else { if (job.th) r.th = 1; if (old || Object.keys(items).length < MAX_ITEMS) { items[job.md5] = r; touch(); } }
           done++; last = `${job.md5.slice(0, 8)} ${job.th ? 'thumb ' : ''}${r.t.length} tags ${Date.now() - t0}ms`;
-          log('vision', last);
-        } catch (e) { failed++; log('err', 'vision failed ' + job.md5.slice(0, 8) + ' ' + e.message); }
+          log('vision', last); logEv('wd', `${job.th ? 'thumbnail ' : 'full image '}${r.t.length} tags, ${Date.now() - t0}ms`, job.md5);
+        } catch (e) { failed++; logEv('wd', 'failed: ' + e.message, job.md5, true); log('err', 'vision failed ' + job.md5.slice(0, 8) + ' ' + e.message); }
         await sleep(job.th ? 60 : 300);
       }
     } finally { busy = false; }
@@ -159,19 +193,19 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
   const api = {
     setMode(fy) { inForYou = !!fy; },
     want(md5) {
-      md5 = String(md5 || '').toLowerCase(); if (/^[0-9a-f]{32}$/.test(md5)) dropThumb(md5); if (!/^[0-9a-f]{32}$/.test(md5) || !session || !api.enabled() || full(md5) || queued.has(md5)) return;
+      md5 = String(md5 || '').toLowerCase(); if (/^[0-9a-f]{32}$/.test(md5)) dropThumb(md5); if (!/^[0-9a-f]{32}$/.test(md5) || !live() || !api.enabled() || full(md5) || queued.has(md5)) return;
       const buf = recent.get(md5);
       if (buf) { recent.delete(md5); recentBytes -= buf.length; queued.add(md5); queue.push({ md5, buf }); pump(); return; }
       wanted.add(md5); if (wanted.size > 100) wanted.delete(wanted.values().next().value);
     },
     // Backfill from files already on disk (offline library): no network. Returns how many were queued.
     queueFiles(list) {
-      if (!session || !api.enabled()) return 0; let n = 0;
+      if (!live() || !api.enabled()) return 0; let n = 0;
       for (const { md5: m, file } of list) { const md5 = String(m || '').toLowerCase(); if (!/^[0-9a-f]{32}$/.test(md5) || get().items[md5] || queued.has(md5) || !/.(jpe?g|png|gif|webp)$/i.test(file)) continue; queued.add(md5); queue.push({ md5, file }); n++; }
       if (n) pump(); return n;
     },
     // Stop the model thread before the process exits (exiting while it loads can crash node).
-    close: () => { if (dirty) { clearTimeout(dirty); flush(); } return worker ? worker.terminate().catch(() => {}) : Promise.resolve(); },
+    close: () => { if (dirty) { clearTimeout(dirty); flush(); } hydra.close(); return worker ? worker.terminate().catch(() => {}) : Promise.resolve(); },
     hasLocal: () => existsSync(localFile),
     setAllViews(v) { if (!existsSync(localFile)) return; allViews = !!v; writeFileSync(localFile, JSON.stringify({ allViews })); },
     enabled: () => get().enabled !== false,
@@ -185,10 +219,17 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
     },
     setOpt(k, v) { if (!['aiTags', 'look', 'thumbs'].includes(k)) return; const d = get(); (d.opts || (d.opts = {}))[k] = !!v; touch(); },
     setEnabled(v) { get().enabled = !!v; touch(); },
-    ready: () => !!(session && api.enabled()),
+    ready: () => !!(live() && api.enabled()),
     has: (md5) => !!get().items[md5],
     count: () => Object.keys(get().items).length,
-    tags: (md5) => get().items[md5]?.t || null,
+    tags: (md5) => tagInfo(md5)?.map(e => e.n) || null,
+    tagInfo,
+    // Optional Hydra tagger: source (wd | hydra | both), max tags shown, Start / Stop (click only), log for Settings.
+    tagger: () => ({ mode: taggerMode(), max: tagMax(), hydraTags: hydra.count(), available: hydra.present(), ...hydra.info() }),
+    setTagger(mode, max) { if (TAGGERS.includes(mode)) get().tagger = mode; if (max != null && Number.isFinite(Number(max))) get().tagMax = Math.min(200, Math.max(5, Math.round(Number(max)))); touch(); },
+    tagStart: () => hydra.start(),
+    tagStop() { hydra.stop('Stop button'); return true; },
+    logView: () => ({ now: Date.now(), wd: { ready: !!session, device, busy, queued: queue.length, thumbQueued: thumbQ.length, analysed: Object.keys(get().items).length, error: sessErr }, tagger: api.tagger(), events: evRing.slice(-80) }),
     look: (md5) => get().items[md5]?.look || null,
     hash: (md5) => get().items[md5]?.h || null,
     stats() {
@@ -207,11 +248,11 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
 
     async status() {
       await loadLibs(); if (!session && libs && modelOk()) await ensureSession();
-      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, busy, queued: queue.length, thumbQueued: thumbQ.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, opts: { aiTags: api.opt('aiTags'), look: api.opt('look'), thumbs: api.opt('thumbs') },...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
+      return { enabled: api.enabled(), packages: !!libs, packagesError: libErr, model: modelOk(), ready: !!session, device, deviceChoice: get().device || 'auto', error: sessErr, setup, busy, queued: queue.length, thumbQueued: thumbQ.length, analysed: Object.keys(get().items).length, withLook: api.stats().n, opts: { aiTags: api.opt('aiTags'), look: api.opt('look'), thumbs: api.opt('thumbs') }, tagger: api.tagger(),...(api.hasLocal() ? { local: { allViews } } : {}), done, failed, last };
     },
     keepsAlive(rawUrl) {
       const u = String(rawUrl || '');
-      if (!session || !api.enabled() || (inForYou === false && !allViews)) return false;
+      if (!live() || !api.enabled() || (inForYou === false && !allViews)) return false;
       const m = /([0-9a-f]{32}).(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.exec(u) || /^sankaku:([0-9a-f]{32}):(?:file|sample)$/.exec(u);
       return !!m && !full(m[1].toLowerCase());
     },
@@ -219,7 +260,7 @@ export function createVision({ dir, fetchImpl = fetch, log = () => {} }) {
       try {
         const isThumb = /\/(preview|thumbnails?)\/|thumbnail_|^sankaku:[0-9a-f]{32}:preview$/i.test(String(rawUrl || ''));
         if (isThumb) return res && res.status === 200 && res.body && api.enabled() ? tapThumb(res, String(rawUrl)) : res;
-        if (!session || !api.enabled() || (inForYou === false && !allViews) || !res || res.status !== 200 || !res.body) return res;
+        if (!live() || !api.enabled() || (inForYou === false && !allViews) || !res || res.status !== 200 || !res.body) return res;
         if (!/^image\//i.test(res.headers.get('content-type') || '')) return res;
         const u = String(rawUrl || '');
         // Sankaku media goes through the proxy as "sankaku:<md5>:<kind>" instead of a file URL.

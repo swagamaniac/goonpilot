@@ -1,0 +1,7 @@
+# Optional: only for the Hydra tagger (see the wiki page "Image analysis"). Python 3.11 or newer.
+# Install the matching PyTorch build for your GPU first (https://pytorch.org/get-started/locally/), then: pip install -r requirements.txt
+torch >= 2.6.0, < 2.13.0
+numpy
+pyvips[binary]
+einops
+safetensors
