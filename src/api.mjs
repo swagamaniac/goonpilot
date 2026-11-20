@@ -41,6 +41,15 @@ export function setCustomSources(list) {
   for (const c of list || []) { try { const e = checkCustom(c); SOURCES[e.id] = makeCustom(e); } catch {} }
 }
 
+// Proxied media is served from this origin, so an upstream that answers with HTML or JS must not run here:
+// anything that isn't image/video/audio becomes a download type, and the sandbox stops scripts in a directly opened file (e.g. SVG).
+function safeMedia(res) {
+  const h = new Headers(res.headers), ct = h.get('content-type') || '';
+  if (!/^(image|video|audio)\//i.test(ct)) h.set('Content-Type', 'application/octet-stream');
+  h.set('Content-Security-Policy', 'sandbox');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
@@ -420,10 +429,10 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   try {
     if (m[2] === 'media') {
       if (!source.media) return json({ error: 'Not found' }, 404);
-      const local = ctx.library?.serve(p.get('u') || '', request); if (local) return local;
+      const local = ctx.library?.serve(p.get('u') || '', request); if (local) return safeMedia(local);
       let mres = await source.media(p.get('u') || '', request, env, fetchImpl);
       if (ctx.library) mres = ctx.library.tap(mres, p.get('u') || '');
-      return ctx.vision ? ctx.vision.tap(mres, p.get('u') || '') : mres;
+      return safeMedia(await (ctx.vision ? ctx.vision.tap(mres, p.get('u') || '') : mres)); // tap may be async in an extension
     }
     if (m[2] === 'tagcheck') return json({ exists: await checkTags(source, list(p.get('names')), env, fetchImpl) });
     if (m[2] === 'suggest') {
