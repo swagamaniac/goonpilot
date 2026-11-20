@@ -128,7 +128,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: withHkDefaults(store.get('hotkeys', {})), hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), skArtist: store.get('skArtist', true),aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), skArtist: store.get('skArtist', true), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
@@ -1560,6 +1560,9 @@ function renderSettingsTab(body) {
 }
 // Settings sections fold when their heading is tapped; which ones are folded is remembered on this device only.
 const opened = new Set(store.get('opened', [])); // every section starts folded; this remembers the ones you opened
+// Site logins and Custom sites became subsections of Sites: carry their old folded/order state over to it.
+const SITES_OLD = ['Site logins', 'Custom sites'];
+if (SITES_OLD.some(k => opened.has(k))) opened.add('Sites');
 function foldGroups(body) {
   for (const h of body.querySelectorAll(':scope > .fybox > h3')) {
     const box = h.parentElement, k = h.textContent, set = c => { box.classList.toggle('closed', c); h.setAttribute('aria-expanded', !c); };
@@ -1572,9 +1575,6 @@ function foldGroups(body) {
   const idx = b => { const t = title(b), i = Math.min(...[t, ...(t === 'Sites' ? SITES_OLD : [])].map(x => order.indexOf(x)).filter(x => x >= 0), 1e6); return i; };
   const marks = boxes.map(b => { const m = document.createComment(''); b.before(m); return m; });
   [...boxes].sort((a, b) => idx(a) - idx(b)).forEach((b, i) => { marks[i].replaceWith(b); });
-// Site logins and Custom sites became subsections of Sites: carry their old folded/order state over to it.
-const SITES_OLD = ['Site logins', 'Custom sites'];
-if (SITES_OLD.some(k => opened.has(k))) opened.add('Sites');
   const sorted = [...body.querySelectorAll(':scope > .fybox.fold')];
   const titles = sorted.map(title);
   makeSortable(sorted, b => b, (f, t) => {
@@ -1925,12 +1925,16 @@ function renderSiteList() {
     cb.onchange = () => {
       S.hiddenSites = cb.checked ? S.hiddenSites.filter(x => x !== site) : [...new Set([...S.hiddenSites, site])];
       store.set('hiddenSites', S.hiddenSites);
+      if (site === 'sankaku' && d.skDet) d.skDet.hidden = !cb.checked; // Sankaku settings only show while Sankaku is enabled
       if (!cb.checked && S.sites.includes(site)) { S.sites = S.sites.filter(x => x !== site); markDirty(); }
       else render.sites();
     };
     lab.append(cb, ' ' + site); list.append(lab);
   }
   d.append(list);
+  const skDet = el('details', 'fydrop'); skDet.open = !!S.skOpen; skDet.ontoggle = () => { S.skOpen = skDet.open; };
+  skDet.append(el('summary', null, 'Sankaku'));
+  const sd = el('div', 'fybox'); skDet.append(sd);
   const th = el('label'), tcb = el('input'); tcb.type = 'checkbox'; tcb.checked = S.skThreshold;
   tcb.onchange = () => { S.skThreshold = tcb.checked; store.set('skThreshold', S.skThreshold); markDirty(); };
   th.append(tcb, ' Sankaku: show low-rated posts too');
@@ -1939,16 +1943,12 @@ function renderSiteList() {
   bcb.onchange = () => { S.skBooks = bcb.checked; store.set('skBooks', S.skBooks); markDirty(); };
   bk.append(bcb, ' Sankaku: hide comic/book pages everywhere');
   sd.append(bk, el('p', 'hint', 'Off: like the site, book pages are hidden only on big tags. On: always hidden (except pool: and fav: searches).'));
-      if (site === 'sankaku' && d.skDet) d.skDet.hidden = !cb.checked; // Sankaku settings only show while Sankaku is enabled
   const rc = el('label'), rcs = el('select');
   for (const [v, t] of [['off', 'off'], ['feed', 'For You feed'], ['user', 'Recommended for me']]) { const o = el('option'); o.value = v; o.textContent = t; rcs.append(o); }
   rcs.value = ['feed', 'user'].includes(S.skRec) ? S.skRec : 'off';
   rcs.onchange = () => { S.skRec = rcs.value === 'off' ? false : rcs.value; store.set('skRec', S.skRec); markDirty(); };
   rc.append('Sankaku recommendations: ', rcs);
   sd.append(rc, el('p', 'hint', "Uses your Sankaku account. For You feed = the site's For You tab; Recommended for me = recommended_for:<your name> (based on your Sankaku favs/votes). Only used when you search Sankaku with no tags of your own (your blocklist still applies); searches with tags stay normal. Read-only: nothing is sent to Sankaku."));
-  const skDet = el('details', 'fydrop'); skDet.open = !!S.skOpen; skDet.ontoggle = () => { S.skOpen = skDet.open; };
-  skDet.append(el('summary', null, 'Sankaku'));
-  const sd = el('div', 'fybox'); skDet.append(sd);
   const sf = el('label'), sfb = el('input'); sfb.type = 'checkbox'; sfb.checked = S.skFav;
   sfb.onchange = () => { S.skFav = sfb.checked; store.set('skFav', S.skFav); };
   sf.append(sfb, ' Sankaku: sync likes to your Sankaku favorites');
@@ -1999,6 +1999,13 @@ function renderSiteList() {
     ai.append(acb, ' Translate the AI tag between sites');
     d.append(ai, el('p', 'hint', 'The AI tag is renamed to each site\'s own name for it, and dropped on e621.'));
   }
+  // "Sankaku likes" (Count/Ignored) is a For you pref; shown here with the other Sankaku settings.
+  if (S.fyState?.prefs) {
+    sd.append(segField('Sankaku likes', [true, false], S.fyState.prefs.skLikes !== false, v => v ? 'Count' : 'Ignored', async v => { if (await setPrefs({ skLikes: v })) { fyPanelDirty = true; await loadFyState(); } }));
+    sd.append(el('p', 'hint', 'Ignored: likes on Sankaku posts stay saved (and synced to your Sankaku favorites) but are not learned from.'));
+  } else loadFyState().then(() => { if (S.fyState && !$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {});
+  skDet.hidden = S.hiddenSites.includes('sankaku');
+  d.skDet = skDet; // appended last in the Sites category by renderSettingsTab
   return d;
 }
 function renderBlocklist() {
@@ -2017,13 +2024,6 @@ function renderBlocklist() {
   d.append(el('p', 'hint', 'Your own blocked tags. Press Enter to add.'));
   const own = el('div', 'fyblack');
   const saveOwn = arr => { S.blockTags = arr; store.set('blockTags', arr); markDirty(); renderSheet(); };
-  // "Sankaku likes" (Count/Ignored) is a For you pref; shown here with the other Sankaku settings.
-  if (S.fyState?.prefs) {
-    sd.append(segField('Sankaku likes', [true, false], S.fyState.prefs.skLikes !== false, v => v ? 'Count' : 'Ignored', async v => { if (await setPrefs({ skLikes: v })) { fyPanelDirty = true; await loadFyState(); } }));
-    sd.append(el('p', 'hint', 'Ignored: likes on Sankaku posts stay saved (and synced to your Sankaku favorites) but are not learned from.'));
-  } else loadFyState().then(() => { if (S.fyState && !$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {});
-  skDet.hidden = S.hiddenSites.includes('sankaku');
-  d.skDet = skDet; // appended last in the Sites category by renderSettingsTab
   S.blockTags.forEach(t => { const c = el('span', null, t), x = el('button', null, '×'); x.onclick = () => saveOwn(S.blockTags.filter(y => y !== t)); c.append(x); own.append(c); });
   const inp = el('input', 'fyinput'); inp.placeholder = 'tag to block'; inp.setAttribute('aria-label', 'Tag to block');
   inp.onkeydown = ev => {
@@ -2038,6 +2038,24 @@ function renderBlocklist() {
     lab.append(cb, ' Skip blocklist on ' + site); d.append(lab);
   }
   return det;
+}
+// Adds one tag to your own blocklist (shared by Settings > Blocklist and the quick field in the header). Returns true if added.
+function addBlockTag(raw) {
+  const t = String(raw).trim().toLowerCase().replace(/^-+/, '').replace(/\s+/g, '_'); if (!t) return false;
+  if (S.blockTags.includes(t)) { toast('Already in your list'); return false; }
+  const by = blockedCoveredBy(t); if (by) toast(`Already blocked by ${by}`);
+  S.blockTags = [...S.blockTags, t]; store.set('blockTags', S.blockTags); markDirty(); renderSheet();
+  return true;
+}
+// Quick blocklist in the header: a button toggles a single "tag to block" field.
+{
+  const btn = $('blockBtn'), inp = $('blockIn');
+  btn.onclick = () => { const show = inp.hidden; inp.hidden = !show; btn.setAttribute('aria-expanded', show); if (show) inp.focus(); };
+  inp.onkeydown = ev => {
+    ev.stopPropagation();
+    if (ev.key === 'Escape') { inp.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); if (addBlockTag(inp.value)) inp.value = ''; }
+  };
 }
 // Blocked group names, e.g. { Gore: true, Scat: false } -> ['Gore'].
 const blockedList = () => Object.keys(S.blocked).filter(g => S.blocked[g]);
@@ -2092,24 +2110,6 @@ function tagListEditor(title, key, placeholder, s, after) {
   const save = async arr => { if (await setPrefs({ [key]: arr })) (after || renderSheet)(); };
   s.prefs[key].forEach(t => { const c = el('span', null, t); const x = el('button', null, '×'); x.onclick = () => save(s.prefs[key].filter(y => y !== t)); c.append(x); list.append(c); });
   const inp = el('input'); inp.placeholder = placeholder; inp.className = 'fyinput';
-// Adds one tag to your own blocklist (shared by Settings > Blocklist and the quick field in the header). Returns true if added.
-function addBlockTag(raw) {
-  const t = String(raw).trim().toLowerCase().replace(/^-+/, '').replace(/\s+/g, '_'); if (!t) return false;
-  if (S.blockTags.includes(t)) { toast('Already in your list'); return false; }
-  const by = blockedCoveredBy(t); if (by) toast(`Already blocked by ${by}`);
-  S.blockTags = [...S.blockTags, t]; store.set('blockTags', S.blockTags); markDirty(); renderSheet();
-  return true;
-}
-// Quick blocklist in the header: a button toggles a single "tag to block" field.
-{
-  const btn = $('blockBtn'), inp = $('blockIn');
-  btn.onclick = () => { const show = inp.hidden; inp.hidden = !show; btn.setAttribute('aria-expanded', show); if (show) inp.focus(); };
-  inp.onkeydown = ev => {
-    ev.stopPropagation();
-    if (ev.key === 'Escape') { inp.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
-    else if (ev.key === 'Enter') { ev.preventDefault(); if (addBlockTag(inp.value)) inp.value = ''; }
-  };
-}
   inp.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); const v = inp.value.trim(); if (v) save([...s.prefs[key], v]); } };
   wrap.append(list, inp); return wrap;
 }
@@ -2568,4 +2568,3 @@ window.setFill = (on) => {
 };
 function updTouchBar() { tbar.hidden = !(TOUCH.matches && S.fyOn && S.vOpen && S.tbarOn); document.body.classList.toggle('tbar-vis', !tbar.hidden); $('vBar').setAttribute('aria-pressed', String(S.tbarOn)); $('vBar').classList.toggle('on', S.tbarOn); }
 $('vBar').onclick = () => { S.tbarOn = !S.tbarOn; store.set('tbarOn', S.tbarOn); updTouchBar(); };
-
