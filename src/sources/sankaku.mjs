@@ -54,8 +54,9 @@ async function call(path, params, env, fetchImpl, retry = true, hdr = {}) {
     loginFailed = { who: `${env.SANKAKU_USERNAME}\n${env.SANKAKU_PASSWORD}` };
     throw err(LOGIN_MSG, 401);
   }
-  if (!data) throw err(`Unexpected answer from Sankaku (${res.status})`, res.status === 403 ? 403 : 502);
-  if (!res.ok || data?.success === false) throw err(`Sankaku: ${code.split('__').pop().replace(/[-_]/g, ' ') || res.status}`, res.status >= 500 ? 502 : 400);
+  const opHint = res.status >= 500 && /(^|\s)(~|[^\s]*\*)/.test(params.tags || '') ? ' (too many ~ or * tags? try fewer)' : '';
+  if (!data) throw err(`Unexpected answer from Sankaku (${res.status})${opHint}`, res.status === 403 ? 403 : 502);
+  if (!res.ok || data?.success === false) throw err(`Sankaku: ${code.split('__').pop().replace(/[-_]/g, ' ') || res.status}${opHint}`, res.status >= 500 ? 502 : 400);
   return data;
 }
 
@@ -144,6 +145,12 @@ function buildTags({ include = [], exclude = [], or = [], orGroups = [], sort = 
   const parts = [...include.map(sankakuTerm), ...exclude.map(t => '-' + sankakuTerm(t))].filter(t => t && t !== '-');
   const groups = [or, ...orGroups].map(g => g.map(sankakuTerm).filter(Boolean)).filter(g => g.length);
   for (const g of groups) parts.push(...(g.length > 1 ? g.map(t => '~' + t) : g));
+  // Measured Sankaku limits: 7 plain tags and 2 ~ (or) tags (no confirmed cap on - or *). Extras are dropped from the end
+  // (your own tags come before blocklist excludes), so a search never fails with "too many tags".
+  let plain = 0, tildes = 0;
+  const kept = parts.filter(t => (t[0] === '~' ? ++tildes <= 2 : /^-|\*/.test(t) ? true : ++plain <= 7));
+  if (kept.length < parts.length) console.log(`  [sankaku] over the tag limit (7 plain, 2 ~): dropped ${parts.filter(t => !kept.includes(t)).join(' ')}`);
+  parts.splice(0, parts.length, ...kept);
   if (sort === 'score') parts.push('order:quality');
   else if (sort === 'popular') parts.push('order:popularity');
   else if (sort === 'random') parts.push('order:random');
