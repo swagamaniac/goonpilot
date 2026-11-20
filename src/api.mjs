@@ -289,12 +289,18 @@ async function handleDownload(request, url, env, fetchImpl, fy, posts, library =
   } });
 }
 
+// Quoted when needed; text a spreadsheet would run as a formula gets a leading apostrophe (plain numbers stay numbers).
+const csvCell = (v) => {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 export function buildLikedCsv(fy, posts, filter = 'likes') {
   const rows = ['site,id,link,file,vote'];
   for (const v of fy.listVotes({ filter, offset: 0, limit: 100000 }).items) {
     const snap = posts.get(`${v.site}:${v.id}`);
     const link = snap?.link || ({ rule34: `https://rule34.xxx/index.php?page=post&s=view&id=${v.id}`, e621: `https://e621.net/posts/${v.id}`, e6ai: `https://blep.art/posts/${v.id}`, paheal: `https://rule34.paheal.net/post/view/${v.id}`, danbooru: `https://danbooru.donmai.us/posts/${v.id}`, gelbooru: `https://gelbooru.com/index.php?page=post&s=view&id=${v.id}`, derpibooru: `https://derpibooru.org/images/${v.id}` })[v.site] || '';
-    rows.push([v.site, v.id, link, (snap && !snap.gone && upstreamUrl(snap.file)) || '', v.vote].join(','));
+    rows.push([v.site, v.id, link, (snap && !snap.gone && upstreamUrl(snap.file)) || '', v.vote].map(csvCell).join(','));
   }
   return '\ufeff' + rows.join('\r\n') + '\r\n';
 }
