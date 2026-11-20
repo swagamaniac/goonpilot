@@ -362,3 +362,29 @@ html, body, button, a { touch-action: manipulation; }
 .fymore { display: contents; }
 .scoredir { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 @media (max-width: 560px) { .sheet { width: calc(100% - 12px); padding: 12px; } .sheet .seg { flex-wrap: wrap; } }
+
+/* Categories and manual ordering (Favorites, Supertags, Saved, settings sections) */
+.dragging { opacity: .6; outline: 2px dashed var(--accent); outline-offset: 2px; }
+.cathead { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.cathead h3 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fybox.fold { position: relative; }
+.fybox.fold > h3 { padding-right: 44px; }
+.cattitle { cursor: pointer; user-select: none; }
+.cattitle::after { content: ' ▾'; color: var(--muted); }
+.cattitle.shut::after { content: ' ▸'; }
+.catbox.closed > :not(.cathead) { display: none; }
+.catbox .list:empty { min-height: 34px; border: 1px dashed var(--line); border-radius: 10px; }
+.catbox.dropt { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 10px; }
+
+/* Organize / Delete mode switches */
+.modebar { display: flex; gap: 18px; align-items: center; padding: 2px 0 6px; }
+.sw { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; user-select: none; font-size: 13px; }
+.sw input { display: none; }
+.sw .slider { width: 40px; height: 22px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line); position: relative; transition: .15s; flex: none; }
+.sw .slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--fg); transition: .15s; }
+.sw input:checked + .slider { background: var(--accent); border-color: var(--accent); }
+.sw input:checked + .slider::after { left: 20px; background: var(--accent-ink); }
+.organizing { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.organizing .item > *, .organizing .cathead > :not(.cattitle) { pointer-events: none; }
+.organizing .fybox.fold > :not(h3) { pointer-events: none; }
+.organizing .item, .organizing .cathead, .organizing .fybox.fold { outline: 1px dashed var(--line); outline-offset: 1px; }

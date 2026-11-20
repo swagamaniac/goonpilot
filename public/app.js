@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality'];
+const PREFS = ['aheadScreens', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -263,7 +263,7 @@ function addFav(name, kind) {
   addTerm({ name }, '+', kind === 'tag' ? 'general' : kind);
 }
 function searchArtists(names, kind = 'artist') {
-  S.terms = names.map(n => ({ kind: 'tag', name: n, mod: names.length > 1 ? '~' : '+', type: kind === 'tag' ? 'general' : kind }));
+  S.terms = names.map(n => { const kd = S.artists[n]?.kind || kind; return { kind: 'tag', name: n, mod: names.length > 1 ? '~' : '+', type: kd === 'tag' ? 'general' : kd }; });
   closeSheet(); syncFilterUi(); newSearch();
 }
 
@@ -1203,18 +1203,38 @@ function renderSupertags(body) {
   const newBtn = el('button', 'btn', 'New supertag');
   newBtn.onclick = () => { stEdit = { index: -1, name: '', tags: [] }; renderSheet(); };
   body.append(newBtn, el('p', 'hint', 'A supertag is a named bundle of tags. Add it like a tag (it shows up in autocomplete); it expands when searching. Its ~ tags form their own OR group.'));
-  const list = el('div', 'list');
-  S.supers.forEach((s, i) => {
-    const it = el('div', 'item'), g = el('button', 'grow');
-    g.title = 'Add to search';
+  if (!S.supers.length) body.append(el('p', 'hint', 'No supertags yet.'));
+  const newCat = el('button', 'btn ghost', 'New category'); newCat.onclick = () => addCat('superCats'); if (orgOn()) body.append(newCat);
+  const cats = catList('superCats');
+  const row = s => {
+    const i = S.supers.indexOf(s), it = el('div', 'item'), g = el('button', 'grow');
+    it.dataset.k = s.name; g.title = 'Add to search';
     g.append(el('div', 't', '★ ' + s.name), el('div', 's', s.tags.join(' ')));
     g.onclick = () => { pick({ name: s.name, type: 'super' }, '+'); toast('Added ' + s.name + '. Press Search to apply'); };
     const edit = el('button', 'iconbtn', 'Edit');
     edit.onclick = () => { stEdit = { index: i, name: s.name, tags: toTagObjs(s.tags) }; renderSheet(); };
-    it.append(g, edit); list.append(it);
+    it.append(g, edit);
+    return it;
+  };
+  const wraps = [], zones = [];
+  for (const c of cats) {
+    const wrap = el('div', 'catbox');
+    wrap.append(catHeader('superCats', c, (from, to) => { S.supers.forEach(s => { if (s.cat === from) { if (to) s.cat = to; else delete s.cat; } }); store.set('supers', S.supers); }));
+    const list = el('div', 'list'); S.supers.filter(s => s.cat === c).forEach(s => list.append(row(s))); wrap.append(list);
+    body.append(wrap); wraps.push(wrap); zones.push({ el: wrap, list, id: c });
+  }
+  makeSortable(wraps, w => w.querySelector('.cathead'), (f, t) => { moveTo(cats, f, t); store.set('superCats', cats); renderSheet(); });
+  const rest = S.supers.filter(s => !cats.includes(s.cat));
+  const rwrap = el('div', 'catbox'), rlist = el('div', 'list'); rest.forEach(s => rlist.append(row(s)));
+  if (cats.length) rwrap.append(el('h3', null, 'Uncategorized'));
+  rwrap.append(rlist); body.append(rwrap); zones.push({ el: rwrap, list: rlist, id: '' });
+  makeZoneDnD(zones, (it, from, to, els) => {
+    const sp = S.supers.find(x => x.name === it.dataset.k); if (!sp) return;
+    if (to) sp.cat = to; else delete sp.cat;
+    const names = els.map(e => e.dataset.k), members = S.supers.filter(x => names.includes(x.name)), slots = members.map(x => S.supers.indexOf(x));
+    const byName = Object.fromEntries(members.map(x => [x.name, x])); slots.forEach((pos, k) => { S.supers[pos] = byName[names[k]]; });
+    store.set('supers', S.supers); renderSheet();
   });
-  if (!S.supers.length) body.append(el('p', 'hint', 'No supertags yet.'));
-  body.append(list);
 }
 
 function renderSupertagEditor(body) {
@@ -1287,7 +1307,7 @@ function renderSupertagEditor(body) {
     if (!name) { err.textContent = 'Give it a name.'; return; }
     if (!e.tags.length) { err.textContent = 'Add at least one tag.'; return; }
     if (S.supers.some((s, i) => s.name === name && i !== e.index)) { err.textContent = `A supertag called "${name}" already exists.`; return; }
-    const entry = { name, tags: toTagStrings(e.tags) };
+    const entry = { ...(e.index >= 0 ? S.supers[e.index] : {}), name, tags: toTagStrings(e.tags) };
     if (e.index < 0) S.supers.unshift(entry);
     else {
       const old = S.supers[e.index].name;
@@ -1320,6 +1340,8 @@ function renderSupertagEditor(body) {
 function renderSheet() { const sh = document.querySelector('.sheet'), y = sh.scrollTop; renderSheetBody(); sh.scrollTop = y; queueMicrotask(() => { sh.scrollTop = y; }); }
 function renderSheetBody() {
   const body = $('sheetBody'); body.replaceChildren();
+  body.classList.toggle('organizing', UI.isTouch() && orgMode);
+  if (['saved', 'artists', 'super', 'settings', 'fy'].includes(tab)) queueMicrotask(() => { const mb = modeBar(['saved', 'artists', 'super'].includes(tab)); if (mb) body.prepend(mb); });
   const list = el('div', 'list');
   if (tab === 'saved') {
     const save = el('button', 'btn', 'Save current search'); save.disabled = !S.terms.length;
@@ -1340,8 +1362,9 @@ function renderSheetBody() {
       };
       const del = el('button', 'iconbtn', 'Delete');
       del.onclick = () => { S.saved.splice(i, 1); store.set('saved', S.saved); renderSheet(); };
-      it.append(g, del); list.append(it);
+      it.append(g); if (delMode) it.append(del); list.append(it);
     });
+    makeSortable([...list.children], it => it, (f, t) => { moveTo(S.saved, f, t); store.set('saved', S.saved); renderSheet(); });
     body.append(list, el('p', 'hint', 'Stored only in this browser. Opening a saved search fills it in; press Search to run it.'));
   } else if (tab === 'history') {
     if (!S.history.length) body.append(el('p', 'hint', 'No searches yet. Your last 20 searches show up here, even after closing the app.'));
@@ -1469,14 +1492,24 @@ function renderSheetBody() {
   }
 }
 // Settings sections fold when their heading is tapped; which ones are folded is remembered on this device only.
-const folded = new Set(store.get('folded', []));
+const opened = new Set(store.get('opened', [])); // every section starts folded; this remembers the ones you opened
 function foldGroups(body) {
   for (const h of body.querySelectorAll(':scope > .fybox > h3')) {
     const box = h.parentElement, k = h.textContent, set = c => { box.classList.toggle('closed', c); h.setAttribute('aria-expanded', !c); };
-    box.classList.add('fold'); h.tabIndex = 0; h.setAttribute('role', 'button'); set(folded.has(k));
-    h.onclick = () => { const c = !box.classList.contains('closed'); set(c); folded[c ? 'add' : 'delete'](k); store.set('folded', [...folded]); };
+    box.classList.add('fold'); h.tabIndex = 0; h.setAttribute('role', 'button'); set(!opened.has(k));
+    h.onclick = () => { const c = !box.classList.contains('closed'); set(c); opened[c ? 'delete' : 'add'](k); store.set('opened', [...opened]); };
     h.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); h.click(); } };
   }
+  // Manual section order (saved in secOrder, synced). Boxes swap into each other's slots so other content stays put.
+  const boxes = [...body.querySelectorAll(':scope > .fybox.fold')], title = b => b.querySelector(':scope > h3').textContent, order = catList('secOrder');
+  const idx = b => { const i = order.indexOf(title(b)); return i < 0 ? 1e6 : i; };
+  const marks = boxes.map(b => { const m = document.createComment(''); b.before(m); return m; });
+  [...boxes].sort((a, b) => idx(a) - idx(b)).forEach((b, i) => { marks[i].replaceWith(b); });
+  const sorted = [...body.querySelectorAll(':scope > .fybox.fold')];
+  const titles = sorted.map(title);
+  makeSortable(sorted, b => b, (f, t) => {
+    moveTo(titles, f, t); S.secOrder = [...titles, ...order.filter(x => !titles.includes(x))]; store.set('secOrder', S.secOrder); renderSheet();
+  });
 }
 const group = (title, ...kids) => { const d = el('div', 'fybox'); d.append(el('h3', null, title), ...kids); return d; };
 
@@ -1542,6 +1575,117 @@ function renderDrive() {
   return box;
 }
 
+// Optional categories and manual order. Additive: old data without cat/order keeps working (uncategorized, sorted by name).
+const catList = k => { if (!Array.isArray(S[k])) S[k] = store.get(k, []); return S[k]; };
+const moveTo = (arr, f, t) => { const [x] = arr.splice(f, 1); arr.splice(t, 0, x); };
+// Put `subset` (a subsequence of `all`) into the order given by (from -> to), leaving everything else where it is.
+function reorderSlots(all, subset, f, t) {
+  const slots = subset.map(x => all.indexOf(x)), arr = subset.slice(); moveTo(arr, f, t); slots.forEach((p, k) => { all[p] = arr[k]; });
+}
+// Organize / Delete modes (sheet-wide, not saved). Organize: press and drag anything to reorder or move it; on touch hold ~0.3 s first,
+// so plain scrolling never moves anything. Delete: shows the delete buttons.
+let orgMode = false, delMode = false;
+const orgOn = () => !UI.isTouch() || orgMode; // mouse: drag is always available; touch: only while Organize is on
+const catOpen = new Set(store.get('catOpen', [])); // expanded categories (all start collapsed), remembered on this device only
+function armDrag(h, begin) {
+  h.oncontextmenu = ev => { if (UI.isTouch() && orgMode) ev.preventDefault(); };
+  h.onpointerdown = e => {
+    if (!orgOn() || e.button > 0) return;
+    e.stopPropagation();
+    const sx = e.clientX, sy = e.clientY, touch = e.pointerType !== 'mouse', block = ev => ev.preventDefault();
+    let st = null, timer = null;
+    const end = () => { clearTimeout(timer); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('touchmove', block); };
+    const start = () => { timer = null; st = begin(); window.addEventListener('touchmove', block, { passive: false }); if (navigator.vibrate) try { navigator.vibrate(15); } catch {} };
+    const move = ev => {
+      if (!st) { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > (touch ? 8 : 5)) { if (touch) end(); else start(); } return; }
+      st.move(ev);
+    };
+    const up = () => { const was = st; end(); if (was) { was.finish(); const eat = ev => ev.stopPropagation(); window.addEventListener('click', eat, true); setTimeout(() => window.removeEventListener('click', eat, true), 0); } };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    if (touch) timer = setTimeout(start, 300);
+  };
+}
+function autoScroll(it, y) { const sc = it.closest('.sheet'); if (sc) { if (y < 90) sc.scrollBy(0, -12); else if (y > innerHeight - 90) sc.scrollBy(0, 12); } }
+// Reorder siblings. items share one parent; handleOf(item) is the element you press; onDrop(from, to) gets indexes in the original order.
+function makeSortable(items, handleOf, onDrop) {
+  if (!orgOn()) return;
+  for (const it of items) {
+    const h = handleOf(it); if (!h) continue;
+    armDrag(h, () => {
+      const order = [...items]; it.classList.add('dragging');
+      return {
+        move(ev) {
+          const y = ev.clientY;
+          for (const o of order) {
+            if (o === it) continue; const r = o.getBoundingClientRect();
+            if (y > r.top && y < r.bottom) { const ci = order.indexOf(it), oi = order.indexOf(o); if (oi > ci) o.after(it); else o.before(it); order.splice(ci, 1); order.splice(oi, 0, it); break; }
+          }
+          autoScroll(it, y);
+        },
+        finish() { it.classList.remove('dragging'); const f = items.indexOf(it), t = order.indexOf(it); if (f !== t) onDrop(f, t); }
+      };
+    });
+  }
+}
+// Move items between zones (categories + uncategorized) of one group, or reorder inside a zone.
+// zones: [{ el, list, id }]; onDrop(itemEl, fromId, toId, itemElsInTargetOrder).
+function makeZoneDnD(zones, onDrop) {
+  if (!orgOn()) return;
+  const zoneOf = n => zones.find(z => z.list === n.parentElement);
+  for (const z of zones) for (const it of [...z.list.children]) {
+    armDrag(it, () => {
+      const from = zoneOf(it), idx0 = [...from.list.children].indexOf(it); it.classList.add('dragging');
+      return {
+        move(ev) {
+          const y = ev.clientY, t = document.elementFromPoint(ev.clientX, y), zone = t && zones.find(q => q.el.contains(t));
+          zones.forEach(q => q.el.classList.toggle('dropt', q === zone));
+          if (zone) {
+            const over = [...zone.list.children].find(c => { if (c === it) return false; const r = c.getBoundingClientRect(); return y > r.top && y < r.bottom; });
+            if (over) { const r = over.getBoundingClientRect(); if (y < r.top + r.height / 2) over.before(it); else over.after(it); }
+            else if (it.parentElement !== zone.list) zone.list.append(it);
+          }
+          autoScroll(it, y);
+        },
+        finish() {
+          it.classList.remove('dragging'); zones.forEach(q => q.el.classList.remove('dropt'));
+          const to = zoneOf(it); if (to !== from || [...to.list.children].indexOf(it) !== idx0) onDrop(it, from.id, to.id, [...to.list.children]);
+        }
+      };
+    });
+  }
+}
+function modeBar(withDelete) {
+  const bar = el('div', 'modebar');
+  const sw = (label, on, set) => { const l = el('label', 'sw'), c = el('input'); c.type = 'checkbox'; c.checked = on; c.onchange = () => { set(c.checked); renderSheet(); }; l.append(c, el('span', 'slider'), el('span', null, label)); return l; };
+  if (UI.isTouch()) bar.append(sw('Organize', orgMode, v => { orgMode = v; if (v) delMode = false; }));
+  if (withDelete) bar.append(sw('Delete', delMode, v => { delMode = v; if (v && UI.isTouch()) orgMode = false; }));
+  return bar.children.length ? bar : null;
+}
+function addCat(key) {
+  const n = (prompt('Category name') || '').trim().slice(0, 40); if (!n) return;
+  const l = catList(key); if (l.length >= 20) { toast('Max 20 categories'); return; }
+  if (l.some(c => c.toLowerCase() === n.toLowerCase())) { toast('That category already exists'); return; }
+  S[key] = [...l, n]; store.set(key, S[key]); renderSheet();
+}
+// Header row of a category: move, rename, delete. onItems(from, to) re-labels its items ('' = uncategorized).
+function catHeader(key, name, onItems) {
+  const l = catList(key), i = l.indexOf(name), h = el('div', 'cathead');
+  const ren = el('button', 'iconbtn', '✎'); ren.title = 'Rename category';
+  ren.onclick = async () => {
+    const n = (prompt('Rename category', name) || '').trim().slice(0, 40); if (!n || n === name) return;
+    if (l.some(c => c.toLowerCase() === n.toLowerCase() && c !== name)) { toast('That category already exists'); return; }
+    l[i] = n; store.set(key, l); await onItems(name, n); renderSheet();
+  };
+  const del = el('button', 'iconbtn', '×'); del.title = 'Delete category (its items become uncategorized)';
+  del.onclick = async () => { if (!confirm(`Delete category "${name}"? Its items stay, just uncategorized.`)) return; l.splice(i, 1); store.set(key, l); await onItems(name, ''); renderSheet(); };
+  const id = key + ':' + name, title = el('h3', 'grow cattitle', name); title.tabIndex = 0; title.setAttribute('role', 'button');
+  const setFold = c => { h.parentElement?.classList.toggle('closed', c); title.classList.toggle('shut', c); };
+  title.onclick = () => { const c = catOpen.has(id); catOpen[c ? 'delete' : 'add'](id); store.set('catOpen', [...catOpen]); setFold(c); };
+  title.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); title.click(); } };
+  queueMicrotask(() => setFold(!catOpen.has(id)));
+  h.append(title); if (orgOn()) h.append(ren); if (delMode) h.append(del); return h;
+}
+
 function renderArtists(body) {
   const names = Object.keys(S.artists).sort();
   const row = el('div', 'inline'), kind = el('select');
@@ -1559,22 +1703,44 @@ function renderArtists(body) {
     body.append(el('p', 'hint', 'Shows the latest posts from your favorites in one search. Anything posted since you last checked gets a NEW badge. Saved searches do the same when you open them. Remembered only on this computer.'));
   }
   if (!names.length) body.append(el('p', 'hint', 'No favorites yet. Tap an artist name on a post, or ♡ next to any tag in the tag list, or add one above.'));
+  const ord = list => list.sort((x, y) => (S.artists[x].order ?? 1e9) - (S.artists[y].order ?? 1e9) || x.localeCompare(y));
+  const setCat = async (n, c) => { try { const r = await lib('artists', { name: n, cat: c }); S.artists[n] = r.artist; } catch (err) { toast(err.message); } };
+  const item = (n, showDel) => {
+    const a = S.artists[n], it = el('div', 'item artist'), k = a.kind || 'artist';
+    it.dataset.k = n;
+    const g = el('button', 'grow'); g.append(el('div', 't', n)); g.onclick = () => addFav(n, k); g.title = 'Add to search' + (a.site ? ' (selects ' + a.site + ')' : '');
+    if (a.site) g.append(el('div', 'hint', a.site));
+    const note = el('input'); note.className = 'fyinput note'; note.value = a.note || ''; note.placeholder = 'note…'; note.maxLength = 500;
+    const saveNote = async () => { if (note.value === (a.note || '')) return; try { const r = await lib('artists', { name: n, note: note.value }); S.artists[n] = r.artist; toast('Note saved'); } catch (err) { toast(err.message); } };
+    note.onblur = saveNote; note.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); note.blur(); } };
+    const del = el('button', 'iconbtn', '×'); del.title = 'Remove'; del.onclick = () => toggleArtist(n);
+    it.append(g, note);
+    if (showDel) it.append(del);
+    return it;
+  };
+  // Each kind (Artists / Characters / Tags) has its own sub-categories; drag a favorite onto any category of its kind.
   for (const [k, title] of [['artist', 'Artists'], ['character', 'Characters'], ['tag', 'Tags']]) {
-    const group = names.filter(n => (S.artists[n].kind || 'artist') === k); if (!group.length) continue;
+    const key = 'favCats' + { artist: 'Artist', character: 'Character', tag: 'Tag' }[k], cats = catList(key);
+    const all = names.filter(n => (S.artists[n].kind || 'artist') === k); if (!all.length && !cats.length) continue;
     body.append(el('h3', null, title));
-    if (group.length > 1) { const all = el('button', 'btn', `Search all ${group.length} (any of them)`); all.onclick = () => searchArtists(group, k); body.append(all); }
-    const list = el('div', 'list');
-    for (const n of group) {
-      const a = S.artists[n], it = el('div', 'item artist');
-      const g = el('button', 'grow'); g.append(el('div', 't', n)); g.onclick = () => addFav(n, k); g.title = 'Add to search' + (a.site ? ' (selects ' + a.site + ')' : '');
-      if (a.site) g.append(el('div', 'hint', a.site));
-      const note = el('input'); note.className = 'fyinput note'; note.value = a.note || ''; note.placeholder = 'note…'; note.maxLength = 500;
-      const saveNote = async () => { if (note.value === (a.note || '')) return; try { const r = await lib('artists', { name: n, note: note.value }); S.artists[n] = r.artist; toast('Note saved'); } catch (err) { toast(err.message); } };
-      note.onblur = saveNote; note.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); note.blur(); } };
-      const del = el('button', 'iconbtn', '×'); del.title = 'Remove'; del.onclick = () => toggleArtist(n);
-      it.append(g, note, del); list.append(it);
-    }
-    body.append(list);
+    const newCat = el('button', 'btn ghost', 'New category'); newCat.onclick = () => addCat(key); if (orgOn()) body.append(newCat);
+    if (all.length > 1) { const sa = el('button', 'btn', `Search all ${all.length} (any of them)`); sa.onclick = () => searchArtists(all, k); body.append(sa); }
+    const wraps = [], zones = [], build = (id, names2, head) => {
+      const wrap = el('div', 'catbox'), list = el('div', 'list'); if (head) wrap.append(head);
+      for (const n of ord(names2)) list.append(item(n, delMode));
+      wrap.append(list); body.append(wrap); zones.push({ el: wrap, list, id }); return wrap;
+    };
+    for (const c of cats) wraps.push(build(c, all.filter(n => S.artists[n].cat === c), catHeader(key, c, async (from, to) => { await Promise.all(all.filter(n => S.artists[n].cat === from).map(n => setCat(n, to))); })));
+    makeSortable(wraps, w => w.querySelector('.cathead'), (f, t) => { moveTo(cats, f, t); store.set(key, cats); renderSheet(); });
+    const rest = all.filter(n => !cats.includes(S.artists[n].cat)), head = el('div', 'cathead');
+    if (rest.length || cats.length) { head.append(el('span', 'grow hint', cats.length ? 'Uncategorized' : '')); build('', rest, cats.length ? head : null); }
+    makeZoneDnD(zones, async (it, from, to, els) => {
+      const n = it.dataset.k, order = els.map(e => e.dataset.k);
+      if (from !== to) await setCat(n, to);
+      order.forEach((m, j) => { if (S.artists[m]) S.artists[m].order = j; });
+      try { await lib('artists', { reorder: order }); } catch (err) { toast(err.message); }
+      renderSheet();
+    });
   }
   body.append(el('p', 'hint', 'Stored only on this computer (data/artists.json). Searched as tags; tag names can differ between sites.'));
 }

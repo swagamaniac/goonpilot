@@ -7,7 +7,7 @@ export function createArtists({ load, save, now = Date.now }) {
   const bad = (m) => Object.assign(new Error(m), { status: 400 });
   return {
     list() { return Object.values(get().artists).sort((a, b) => a.name.localeCompare(b.name)); },
-    set({ name, note, kind, site }) {
+    set({ name, note, kind, site, cat }) {
       const k = artistKey(name);
       if (!k || k.length > 200 || /[:*]/.test(k) || k.startsWith('-') || k.startsWith('~')) throw bad('Bad artist tag');
       const a = get().artists;
@@ -15,6 +15,7 @@ export function createArtists({ load, save, now = Date.now }) {
       const cur = a[k] || { name: k, note: '', added: now(), kind: 'artist' };
       if (kind === 'artist' || kind === 'character' || kind === 'tag') cur.kind = kind;
       if (typeof site === 'string' && /^[a-z0-9_-]{1,40}$/i.test(site)) cur.site = site; // optional; old entries have none
+      if (typeof cat === 'string') { const c = cat.trim().slice(0, 40); if (c) cur.cat = c; else delete cur.cat; } // optional favorites category
       if (typeof note === 'string') cur.note = note.slice(0, 500);
       a[k] = cur; save(get()); return cur;
     },
@@ -37,6 +38,11 @@ export function createArtists({ load, save, now = Date.now }) {
         ui.prefs = prefs;
       }
       save(get()); return ui;
+    },
+    reorder(keys) { // optional manual order: only touches the order field of the listed favorites
+      const a = get().artists; let n = 0;
+      for (const k of keys.slice(0, MAX)) if (a[artistKey(k)]) a[artistKey(k)].order = n++;
+      save(get());
     },
     remove(name) { delete get().artists[artistKey(name)]; save(get()); }
   };
