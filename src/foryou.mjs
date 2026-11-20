@@ -297,6 +297,8 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
   const dry = new Map(), DRY_TTL = 12 * 60 * 60e3;
   // Exact searches (site + query signature) whose last answer said hasMore=false: asked again unchanged they would only return the same posts, so they are not re-sent. Cleared whenever the search context changes.
   const exhausted = new Map();
+  const emptySets = new Map(); // filters key -> [{ inc: tags, t }] of first-page searches that returned nothing
+
   const isMissing = (site, name) => { if (site === 'paheal' && pahealThin(name)) return true; const L = siteTagSets.get(site); if (L && !L.has(name) && !(site === 'paheal' && L.has(PAHEAL_SITE[name]))) return true; const t = missing.get(site + '|' + name); return !!t && t > now() - MISS_TTL; };
   function pool(prof, site) {
     const all = [...prof.tags].filter(([, e]) => e.aff > 0 && e.type !== 'meta')
@@ -497,6 +499,9 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
           // Same site + same search (tags, page, sort, filters, settings) that already ended with hasMore=false: skip, no request. Sankaku is excluded (its hasMore=false can just mean the page cursor is not known yet).
           const sig = site === 'sankaku' ? '' : JSON.stringify([site, q.include, q.exclude, q.or, q.orGroups, q.page, q.sort, q.minScore, q.rating, q.shape, q.limit, prefs.media, white, prefs.blacklist, sigExtra]);
           { const t = sig && exhausted.get(sig); if (t && t > now() - DRY_TTL) return { site, q, posts: [] }; }
+          // A narrower search (fewer tags, same filters) already returned nothing at its first page, so this broader-in-tags (stricter) one cannot return more: skip, no request.
+          const fkey = site === 'sankaku' ? '' : JSON.stringify([site, q.exclude, q.or, q.orGroups, q.minScore, q.rating, q.shape, prefs.media, prefs.blacklist, sigExtra]);
+          if (fkey) { const subs = emptySets.get(fkey); if (subs && subs.some(s => s.t > now() - DRY_TTL && s.inc.every(x => q.include.includes(x)))) return { site, q, posts: [] }; }
           const unknown = q.include.filter(t => !t.includes('*')).filter(t => { const e = pf(site).tags.get(t); return !e || !e.sites.has(site) || (e.boost && e.pos + e.neg === 0); });
           const localList = site === 'paheal' ? siteTagSets.get('paheal') : null;
           if (unknown.length && (exists || localList)) {
@@ -507,6 +512,11 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
             if (!q.include.length && q.strat !== 'popular') return { site, q, posts: [] };
           }
           const r = await search(site, q);
+          if (fkey && q.page === 0 && q.include.length && !(r.posts || []).length) {
+            const subs = (emptySets.get(fkey) || []).filter(s => s.t > now() - DRY_TTL && !s.inc.every(x => q.include.includes(x)));
+            subs.push({ inc: [...q.include], t: now() }); emptySets.set(fkey, subs.slice(-30));
+            if (emptySets.size > 200) emptySets.delete(emptySets.keys().next().value);
+          }
           if (sig && r.hasMore === false) { exhausted.set(sig, now()); if (exhausted.size > 500) exhausted.delete(exhausted.keys().next().value); }
           return { site, q, posts: r.posts || [] };
       };
@@ -544,7 +554,8 @@ export function createForYou({ load, save, backup = () => {}, enabled, setEnable
       }
       let why = '', note = '';
       if (!cands.size && mode !== 'dive' && ok) {
-        const hadWhite = white.length > 0, round = (trim) => collect(chooseStrategies(3, hasPool, mode).map(async (s, i) => {
+        // One fallback query per site per round (not 3 on the same site when only one site is selected).
+        const hadWhite = white.length > 0, round = (trim) => collect(chooseStrategies(Math.min(3, sites.length), hasPool, mode).map(async (s, i) => {
           const site = sites[i % sites.length], q = makeQuery(s, pf(site), site, rating); if (trim) q.include = q.include.slice(0, 1);
           return runJob(site, q);
         }));
