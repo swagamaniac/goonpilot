@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'infinite', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
+const PREFS = ['aheadScreens', 'infinite', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -127,7 +127,7 @@ const S = {
   mode: 'search',
   md5s: new Set(), dupes: store.get('dupes', false), hiddenDupes: 0,
   artists: {}, history: store.get('history', []), hk: withHkDefaults(store.get('hotkeys', {})), hintsOn: store.get('hintsOn', true), capture: null, reported: new Set(), liked: { filter: 'likes' }, fyDebug: store.get('fyDebug', false), autoNext: store.get('autoNext', true), loopVideos: store.get('loopVideos', true), gDouble: store.get('gDouble', true), fillFit: store.get('fillFit', true), directMedia: store.get('directMedia', false), gSwipe: store.get('gSwipe', true), orient: store.get('orient', 'any'), tbarOn: store.get('tbarOn', true), orientDrop: 0, fyBatch: store.get('fyBatch', 10),
-  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
+  hiddenSites: store.get('hiddenSites', []), showHidden: false, skThreshold: store.get('skThreshold', false), skBooks: store.get('skBooks', false), skRec: store.get('skRec', false), skFav: store.get('skFav', true), skArtist: store.get('skArtist', true),aiTagFix: store.get('aiTagFix', true), blocked: (b => b && !Array.isArray(b) && typeof b === 'object' ? b : {})(store.get('blocked', {})), blockSkip: store.get('blockSkip', []), blockTags: store.get('blockTags', []),
   fyOn: false, votes: {}, fy: { error: '' }, fyState: null
 };
 const persistSearch = () => store.set('search2', { sites: S.sites, terms: S.terms, sort: S.sort, rating: S.rating, minScore: S.minScore, scoreMax: S.scoreMax });
@@ -745,6 +745,8 @@ function newSearch(remember = true) {
   S.ctrl?.abort(); S.ctrl = new AbortController();
   S.gen++; S.fyNoShape = false;
   S.active = { sites: [...S.sites], base: buildBase() };
+  // Artist tags: only query Sankaku when every included artist is a favorite remembered on Sankaku. Other sites still run; if Sankaku is the only site it stays.
+  if (S.skArtist && S.active.sites.includes('sankaku') && S.active.sites.length > 1 && S.terms.some(t => t.kind === 'tag' && t.type === 'artist' && t.mod !== '-' && S.artists[artistKey(t.name)]?.site !== 'sankaku')) S.active.sites = S.active.sites.filter(s => s !== 'sankaku');
   if (S.newSort) S.active.base.sort = S.newSort;
   S.newSince = S.newKey ? { key: S.newKey, prev: { ...(S.seen[S.newKey] || {}) }, n: 0 } : null;
   S.newKey = null; S.newSort = null;
@@ -1116,7 +1118,7 @@ function fillSearch(sites, terms, opts = {}) {
 }
 function runHistory(hh) {
   closeSheet(); sug.hidden = true;
-  fillSearch(hh.sites, hh.terms, hh);
+  fillSearch([...S.sites], hh.terms, hh); // keeps the currently selected sites, only the tags/options come from history
 }
 function showHistory() {
   if (q.value.trim() || !S.history.length) { if (!q.value.trim()) sug.hidden = true; return; }
@@ -1916,6 +1918,10 @@ function renderSiteList() {
   };
   d.append(exp, el('p', 'hint', 'Manual and optional. Sends your already-liked Sankaku posts to your Sankaku favorites; nothing else leaves your PC.'));
   d.append(imp, el('p', 'hint', 'Manual, one time as often as you like. Imported favorites count as likes for For you (unless "Sankaku likes" is set to Ignored). Posts without a file on Sankaku are skipped.'));
+  const sa = el('label'), sab = el('input'); sab.type = 'checkbox'; sab.checked = S.skArtist;
+  sab.onchange = () => { S.skArtist = sab.checked; store.set('skArtist', S.skArtist); };
+  sa.append(sab, ' Sankaku: skip artist searches unless the artist is known to be there');
+  d.append(sa, el('p', 'hint', 'Saves on the Sankaku tag limit. With an artist tag in a multi-site search, Sankaku is only queried if that artist is a favorite remembered on Sankaku. Other sites are unaffected.'));
   if (!S.blocked['AI-generated']) {
     const ai = el('label'), acb = el('input'); acb.type = 'checkbox'; acb.checked = S.aiTagFix;
     acb.onchange = () => { S.aiTagFix = acb.checked; store.set('aiTagFix', S.aiTagFix); markDirty(); };
