@@ -457,8 +457,7 @@ function renderIgnorePanel(p) {
   for (const [key, label] of [['ignoreArtists', '🎨 Artists'], ['ignoreCopyright', '© Series (copyright)'], ['ignoreCharacters', '👤 Characters'], ['ignoreSpecies', '🐾 Species']]) {
     p.append(segField(label, [true, false], !!pr[key], v => v ? 'Ignored' : 'Used', async v => { if (await setPrefs({ [key]: v })) { fyPanelDirty = true; await loadFyState(); } }));
   }
-  p.append(segField('Sankaku likes', [true, false], pr.skLikes !== false, v => v ? 'Count' : 'Ignored', async v => { if (await setPrefs({ skLikes: v })) { fyPanelDirty = true; await loadFyState(); } }));
-  p.append(el('p', 'hint', 'Ignored: likes on Sankaku posts stay saved (and synced to your Sankaku favorites) but are not learned from.'));
+  p.append(el('p', 'hint', 'Whether Sankaku likes count: Settings > Sites > Sankaku.'));
 }
 function renderTaste(p) {
   const s = S.fyState, cols = el('div', 'tastecols');
@@ -1531,7 +1530,15 @@ function renderSettingsTab(body) {
     logins.append(paste, imp, el('p', 'hint', pages
       ? 'Import every site key at once from a .dev.vars file. Keys in it replace the ones saved here; others stay.'
       : 'Import every site key at once from a .dev.vars file. Keys in it replace the ones in .dev.vars; others stay. The old file is backed up to data/backups/ first. Restart the server if a site still ignores a new login.'));
-    body.append(logins, renderSiteList(), renderBlocklist(), renderCustomSites());
+    // Site logins and Custom sites are subsections of the Sites category (same folding pattern as Blocklist).
+    const subBox = (key, title, box) => {
+      box.querySelector(':scope > h3')?.remove();
+      const det = el('details', 'fydrop'); det.open = !!S[key]; det.ontoggle = () => { S[key] = det.open; };
+      det.append(el('summary', null, title), box); return det;
+    };
+    const sitesBox = renderSiteList();
+    sitesBox.append(subBox('loginsOpen', 'Site logins', logins), subBox('customOpen', 'Custom sites', renderCustomSites()), sitesBox.skDet);
+    body.append(sitesBox, renderBlocklist());
     body.append(pages ? renderBackup() : renderExport());
     if (pages) return;
     const rs = el('button', 'btn ghost', '↻ Restart server (start.bat)');
@@ -1562,9 +1569,12 @@ function foldGroups(body) {
   }
   // Manual section order (saved in secOrder, synced). Boxes swap into each other's slots so other content stays put.
   const boxes = [...body.querySelectorAll(':scope > .fybox.fold')], title = b => b.querySelector(':scope > h3').textContent, order = catList('secOrder');
-  const idx = b => { const i = order.indexOf(title(b)); return i < 0 ? 1e6 : i; };
+  const idx = b => { const t = title(b), i = Math.min(...[t, ...(t === 'Sites' ? SITES_OLD : [])].map(x => order.indexOf(x)).filter(x => x >= 0), 1e6); return i; };
   const marks = boxes.map(b => { const m = document.createComment(''); b.before(m); return m; });
   [...boxes].sort((a, b) => idx(a) - idx(b)).forEach((b, i) => { marks[i].replaceWith(b); });
+// Site logins and Custom sites became subsections of Sites: carry their old folded/order state over to it.
+const SITES_OLD = ['Site logins', 'Custom sites'];
+if (SITES_OLD.some(k => opened.has(k))) opened.add('Sites');
   const sorted = [...body.querySelectorAll(':scope > .fybox.fold')];
   const titles = sorted.map(title);
   makeSortable(sorted, b => b, (f, t) => {
@@ -1924,21 +1934,25 @@ function renderSiteList() {
   const th = el('label'), tcb = el('input'); tcb.type = 'checkbox'; tcb.checked = S.skThreshold;
   tcb.onchange = () => { S.skThreshold = tcb.checked; store.set('skThreshold', S.skThreshold); markDirty(); };
   th.append(tcb, ' Sankaku: show low-rated posts too');
-  d.append(th, el('p', 'hint', 'Lowers Sankaku\'s quality cut-off from 2 (what the site uses) to 0. Does not count towards your tag limit.'));
+  sd.append(th, el('p', 'hint', 'Lowers Sankaku\'s quality cut-off from 2 (what the site uses) to 0. Does not count towards your tag limit.'));
   const bk = el('label'), bcb = el('input'); bcb.type = 'checkbox'; bcb.checked = S.skBooks;
   bcb.onchange = () => { S.skBooks = bcb.checked; store.set('skBooks', S.skBooks); markDirty(); };
   bk.append(bcb, ' Sankaku: hide comic/book pages everywhere');
-  d.append(bk, el('p', 'hint', 'Off: like the site, book pages are hidden only on big tags. On: always hidden (except pool: and fav: searches).'));
+  sd.append(bk, el('p', 'hint', 'Off: like the site, book pages are hidden only on big tags. On: always hidden (except pool: and fav: searches).'));
+      if (site === 'sankaku' && d.skDet) d.skDet.hidden = !cb.checked; // Sankaku settings only show while Sankaku is enabled
   const rc = el('label'), rcs = el('select');
   for (const [v, t] of [['off', 'off'], ['feed', 'For You feed'], ['user', 'Recommended for me']]) { const o = el('option'); o.value = v; o.textContent = t; rcs.append(o); }
   rcs.value = ['feed', 'user'].includes(S.skRec) ? S.skRec : 'off';
   rcs.onchange = () => { S.skRec = rcs.value === 'off' ? false : rcs.value; store.set('skRec', S.skRec); markDirty(); };
   rc.append('Sankaku recommendations: ', rcs);
-  d.append(rc, el('p', 'hint', "Uses your Sankaku account. For You feed = the site's For You tab; Recommended for me = recommended_for:<your name> (based on your Sankaku favs/votes). Only used when you search Sankaku with no tags of your own (your blocklist still applies); searches with tags stay normal. Read-only: nothing is sent to Sankaku."));
+  sd.append(rc, el('p', 'hint', "Uses your Sankaku account. For You feed = the site's For You tab; Recommended for me = recommended_for:<your name> (based on your Sankaku favs/votes). Only used when you search Sankaku with no tags of your own (your blocklist still applies); searches with tags stay normal. Read-only: nothing is sent to Sankaku."));
+  const skDet = el('details', 'fydrop'); skDet.open = !!S.skOpen; skDet.ontoggle = () => { S.skOpen = skDet.open; };
+  skDet.append(el('summary', null, 'Sankaku'));
+  const sd = el('div', 'fybox'); skDet.append(sd);
   const sf = el('label'), sfb = el('input'); sfb.type = 'checkbox'; sfb.checked = S.skFav;
   sfb.onchange = () => { S.skFav = sfb.checked; store.set('skFav', S.skFav); };
   sf.append(sfb, ' Sankaku: sync likes to your Sankaku favorites');
-  d.append(sf, el('p', 'hint', 'Liking a Sankaku post adds it to your Sankaku favorites; removing the like (or disliking a liked post) removes it. Only that one post, only Sankaku, nothing else is sent. Past likes are not synced.'));
+  sd.append(sf, el('p', 'hint', 'Liking a Sankaku post adds it to your Sankaku favorites; removing the like (or disliking a liked post) removes it. Only that one post, only Sankaku, nothing else is sent. Past likes are not synced.'));
   const imp = el('button', null, 'Import my Sankaku favorites as likes');
   imp.onclick = async () => {
     if (imp.disabled) return;
@@ -1973,12 +1987,12 @@ function renderSiteList() {
     } catch (e) { toast('Sankaku export stopped: ' + (e.message || 'failed') + ` (${sent} sent so far)`); }
     exp.disabled = false; exp.textContent = 'Send my existing Sankaku likes to my Sankaku favorites';
   };
-  d.append(exp, el('p', 'hint', 'Manual and optional. Sends your already-liked Sankaku posts to your Sankaku favorites; nothing else leaves your PC.'));
-  d.append(imp, el('p', 'hint', 'Manual, one time as often as you like. Imported favorites count as likes for For you (unless "Sankaku likes" is set to Ignored). Posts without a file on Sankaku are skipped.'));
+  sd.append(exp, el('p', 'hint', 'Manual and optional. Sends your already-liked Sankaku posts to your Sankaku favorites; nothing else leaves your PC.'));
+  sd.append(imp, el('p', 'hint', 'Manual, one time as often as you like. Imported favorites count as likes for For you (unless "Sankaku likes" is set to Ignored). Posts without a file on Sankaku are skipped.'));
   const sa = el('label'), sab = el('input'); sab.type = 'checkbox'; sab.checked = S.skArtist;
   sab.onchange = () => { S.skArtist = sab.checked; store.set('skArtist', S.skArtist); };
   sa.append(sab, ' Sankaku: skip artist searches unless the artist is known to be there');
-  d.append(sa, el('p', 'hint', 'Saves on the Sankaku tag limit. With an artist tag in a multi-site search, Sankaku is only queried if that artist is a favorite remembered on Sankaku. Other sites are unaffected.'));
+  sd.append(sa, el('p', 'hint', 'Saves on the Sankaku tag limit. With an artist tag in a multi-site search, Sankaku is only queried if that artist is a favorite remembered on Sankaku. Other sites are unaffected.'));
   if (!S.blocked['AI-generated']) {
     const ai = el('label'), acb = el('input'); acb.type = 'checkbox'; acb.checked = S.aiTagFix;
     acb.onchange = () => { S.aiTagFix = acb.checked; store.set('aiTagFix', S.aiTagFix); markDirty(); };
@@ -2003,6 +2017,13 @@ function renderBlocklist() {
   d.append(el('p', 'hint', 'Your own blocked tags. Press Enter to add.'));
   const own = el('div', 'fyblack');
   const saveOwn = arr => { S.blockTags = arr; store.set('blockTags', arr); markDirty(); renderSheet(); };
+  // "Sankaku likes" (Count/Ignored) is a For you pref; shown here with the other Sankaku settings.
+  if (S.fyState?.prefs) {
+    sd.append(segField('Sankaku likes', [true, false], S.fyState.prefs.skLikes !== false, v => v ? 'Count' : 'Ignored', async v => { if (await setPrefs({ skLikes: v })) { fyPanelDirty = true; await loadFyState(); } }));
+    sd.append(el('p', 'hint', 'Ignored: likes on Sankaku posts stay saved (and synced to your Sankaku favorites) but are not learned from.'));
+  } else loadFyState().then(() => { if (S.fyState && !$('sheetRoot').hidden && tab === 'settings') renderSheet(); }).catch(() => {});
+  skDet.hidden = S.hiddenSites.includes('sankaku');
+  d.skDet = skDet; // appended last in the Sites category by renderSettingsTab
   S.blockTags.forEach(t => { const c = el('span', null, t), x = el('button', null, '×'); x.onclick = () => saveOwn(S.blockTags.filter(y => y !== t)); c.append(x); own.append(c); });
   const inp = el('input', 'fyinput'); inp.placeholder = 'tag to block'; inp.setAttribute('aria-label', 'Tag to block');
   inp.onkeydown = ev => {
@@ -2032,7 +2053,7 @@ function blockedCoveredBy(t) {
 const BLOCK_SKIP_SITES = ['danbooru', 'sankaku'];
 function renderCustomSites() {
   const d = el('div', 'fybox'); d.append(el('h3', null, 'Custom sites'));
-  d.append(el('p', 'hint', 'Add another booru by its address and API type. Only the sites you add are contacted. The list is saved in data/boorus.json and its login fields appear above after adding. Untested.'));
+  d.append(el('p', 'hint', 'Add another booru by its address and API type. Only the sites you add are contacted. The list is saved in data/boorus.json and its login fields appear under Site logins after adding. Untested.'));
   const refresh = async () => { try { S.status = await api.status(); syncSites(S.status); render.sites(); } catch {} renderSheet(); };
   const call = async (body) => { try { await fyJson('boorus', body, undefined, '/api/'); await refresh(); } catch (err) { toast(err.message); } };
   for (const src of (S.status?.sources || []).filter(x => x.custom)) {
