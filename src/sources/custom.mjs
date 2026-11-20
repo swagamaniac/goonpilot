@@ -34,9 +34,16 @@ function buildTags(q, style) {
   return parts.join(' ').slice(0, MAX_TAGS_LEN);
 }
 
+// The site's own domain for the media allowlist. Plain last-two-labels would turn foo.co.uk into co.uk and an IP into its last
+// two numbers, which lets media requests (and an e621-type site's login) reach unrelated hosts.
+export const siteRoot = (host) => {
+  if (/^[0-9.]+$/.test(host) || host.includes(':') || !host.includes('.')) return host;
+  const p = host.split('.'), cc = p.length >= 3 && /^[a-z]{2}$/.test(p.at(-1)) && /^(co|com|net|org|gov|edu|ac|or|ne|go|ltd|plc)$/.test(p.at(-2));
+  return p.slice(cc ? -3 : -2).join('.');
+};
 const sameSite = (u, base) => {
   if (u.protocol !== base.protocol) return false;
-  const root = base.hostname.split('.').slice(-2).join('.');
+  const root = siteRoot(base.hostname);
   return u.hostname === base.hostname || u.hostname === root || u.hostname.endsWith('.' + root);
 };
 
@@ -44,7 +51,7 @@ export function makeCustom({ id, label, base, type, envPrefix, userKey = 'USERNA
   const prefix = envPrefix || `CUSTOM_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
   const site = String(base).replace(/\/+$/, ''), baseUrl = new URL(site);
   const extra = { custom: true, type, base: site };
-  if (type === 'e621') return { ...makeE621ng({ id, label, site, domain: baseUrl.hostname.split('.').slice(-2).join('.'), envPrefix: prefix }), ...extra };
+  if (type === 'e621') return { ...makeE621ng({ id, label, site, domain: siteRoot(baseUrl.hostname), envPrefix: prefix }), ...extra };
 
   const ENV_USER = `${prefix}_${userKey}`, ENV_KEY = `${prefix}_API_KEY`;
   const viaProxy = (u) => { if (!u) return ''; try { return `/api/${id}/media?u=${encodeURIComponent(new URL(u, site + '/').href)}`; } catch { return ''; } };

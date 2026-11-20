@@ -111,8 +111,11 @@ export function makeE621ng({ id, label, site, domain, envPrefix, dropTag = null 
       const h = headers(env); delete h.Accept;
       const range = request.headers.get('range'); if (range) h.Range = range;
       let res = await fetchImpl(u, { headers: h, signal: request.signal });
-      if (res.status === 401 || res.status === 403) {
-        const q = new URL(u); q.searchParams.set('login', env[ENV_USER] || ''); q.searchParams.set('api_key', env[ENV_KEY] || '');
+      // Some files need the login as query parameters; only retry when there is a login and the link is https, so a public
+      // 403 costs no second request and the key never travels in clear text.
+      if ((res.status === 401 || res.status === 403) && env[ENV_USER] && env[ENV_KEY] && u.protocol === 'https:') {
+        res.body?.cancel().catch(() => {});
+        const q = new URL(u); q.searchParams.set('login', env[ENV_USER]); q.searchParams.set('api_key', env[ENV_KEY]);
         res = await fetchImpl(q, { headers: h, signal: request.signal });
       }
       const out = new Headers({ 'Cache-Control': 'private, max-age=86400' });
