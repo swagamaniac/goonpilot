@@ -2525,7 +2525,7 @@ const viewer = {
         const or = el('button', 'mini or', '~'); or.title = 'Add as OR'; or.setAttribute('aria-label', 'Add ' + t.name + ' as OR');
         or.onclick = () => addTerm(t, '~', type);
         row.append(nb); if (cnt) row.append(cnt);
-        else if (type !== 'meta') { const ph = el('span', 'tagcnt'); row.append(ph); (cntPending[t.name.toLowerCase()] ||= []).push(ph); }
+        if (type !== 'meta') { const ph = cnt || el('span', 'tagcnt'); if (!cnt) row.append(ph); (cntPending[t.name.toLowerCase()] ||= []).push(ph); } // the post's own count shows at once; the lookup (same source as the search bar) then replaces it so both always match
         if (type !== 'meta') {
           const fav = !!S.artists[artistKey(t.name)], heart = el('button', 'mini' + (fav ? ' on' : ''), fav ? '♥' : '♡');
           heart.title = fav ? 'Remove from favorites' : 'Add to favorites'; heart.onclick = () => toggleArtist(t.name, type === 'artist' ? 'artist' : type === 'character' ? 'character' : 'tag', p.site); row.append(heart);
@@ -2539,7 +2539,7 @@ const viewer = {
       d.append(sec);
     }
     (async () => {
-      const names = Object.keys(cntPending).slice(0, 24);
+      const names = Object.keys(cntPending).slice(0, 60);
       for (let i = 0; i < names.length; i += 8) {
         const chunk = names.slice(i, i + 8); if (!d.isConnected) return;
         try {

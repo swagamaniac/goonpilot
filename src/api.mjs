@@ -514,7 +514,7 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
       const name = raw.toLowerCase(), ck = source.id + '|' + name, hit = countCache.get(ck);
       if (hit && hit.t > Date.now() - COUNT_RECHECK) { if (hit.v != null) out[name] = hit.v; continue; }
       let v = null;
-      try { const sug = await polite(source.id, () => source.suggest(name, env, fetchImpl), source.minGap || 600); const e = sug.find(x => String(x.name).toLowerCase() === name); v = e && e.count > 0 ? e.count : null; }
+      try { const sug = await polite(source.id, () => source.suggest(name, env, fetchImpl), source.minGap || 600); const e = sug.find(x => String(x.name).toLowerCase().replace(/ /g, '_') === name.replace(/ /g, '_')); v = e && e.count > 0 ? e.count : null; }
       catch { if (hit?.v != null) out[name] = hit.v; continue; }
       if (v == null && hit?.v != null) v = hit.v; // entries never expire or get dropped: a recheck only overwrites with a new number
       countCache.set(ck, { v, t: Date.now() }); if (v != null) out[name] = v;
