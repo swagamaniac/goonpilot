@@ -241,7 +241,9 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
   } catch (err) { return fail(err); }
 }
 
-const tagCache = new Map(), countCache = new Map();
+const tagCache = new Map(), countCache = new Map(), COUNT_RECHECK = 6048e5; // a cached count is served at once; after a week the next request looks it up again and only replaces it with a new number
+let countStore = null;
+const saveCounts = () => { try { countStore?.save({ v: 1, c: Object.fromEntries([...countCache].map(([k, e]) => [k, [e.v, e.t]])) }); } catch {} };
 export async function checkTags(source, names, env, fetchImpl = fetch) {
   const out = {};
   for (const raw of names.slice(0, 12)) {
@@ -374,6 +376,10 @@ function handleExport(request, url, fy, posts) {
 export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
   const url = new URL(request.url);
   skSentCtx = ctx.skSent || null;
+  if (ctx.tagCounts !== countStore) { // persisted tag counts (data/tagcounts.json, this PC only): loaded once
+    countStore = ctx.tagCounts || null;
+    try { const d = countStore?.load(); for (const [k, e] of Object.entries(d?.c || {})) if (Array.isArray(e) && !countCache.has(k)) countCache.set(k, { v: e[0], t: e[1] }); } catch {}
+  }
   if (url.pathname === '/api/lib/export' && request.method === 'GET') return handleExport(request, url, ctx.foryou, ctx.posts);
   if (url.pathname === '/api/lib/download') return handleDownload(request, url, env, fetchImpl, ctx.foryou, ctx.posts, ctx.library);
   if (url.pathname === '/api/lib/restart' && request.method === 'POST') {
@@ -506,12 +512,14 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
     if (!source?.suggest || !source.configured(env)) return json({ counts: out });
     for (const raw of list(url.searchParams.get('names')).slice(0, 8)) {
       const name = raw.toLowerCase(), ck = source.id + '|' + name, hit = countCache.get(ck);
-      if (hit && hit.t > Date.now() - 6048e5) { if (hit.v != null) out[name] = hit.v; continue; }
+      if (hit && hit.t > Date.now() - COUNT_RECHECK) { if (hit.v != null) out[name] = hit.v; continue; }
       let v = null;
       try { const sug = await polite(source.id, () => source.suggest(name, env, fetchImpl), source.minGap || 600); const e = sug.find(x => String(x.name).toLowerCase() === name); v = e && e.count > 0 ? e.count : null; }
-      catch { continue; }
+      catch { if (hit?.v != null) out[name] = hit.v; continue; }
+      if (v == null && hit?.v != null) v = hit.v; // entries never expire or get dropped: a recheck only overwrites with a new number
       countCache.set(ck, { v, t: Date.now() }); if (v != null) out[name] = v;
     }
+    saveCounts();
     return json({ counts: out });
   }
 

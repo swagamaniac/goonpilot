@@ -101,6 +101,7 @@ const artists = createArtists({ load: artistStore.load, save: artistStore.save }
 const library = createLibrary({ dir: path.join(ROOT, 'data'), upstream: upstreamUrl });
 const missStore = fileStore(path.join(ROOT, 'data'), 'tagmiss');
 const skSentStore = fileStore(path.join(ROOT, 'data'), 'sankaku-sent');
+const tagCountStore = fileStore(path.join(ROOT, 'data'), 'tagcounts');
 tagMissing.load(missStore.load());
 const saveMissing = () => { try { missStore.save(tagMissing.dump()); missStore.flush(); } catch {} };
 setInterval(saveMissing, 60 * 1000).unref();
@@ -234,7 +235,7 @@ const server = http.createServer(async (req, res) => {
       for (const h of ['origin', 'x-goonpilot', 'sec-fetch-site']) if (req.headers[h]) fwd[h] = req.headers[h];
       const request = new Request(url, { method: req.method, headers: fwd, body, signal: ac.signal });
       const t0 = Date.now(), tag = url.pathname.replace(/^\/api\//, '').slice(0, 60) + (/media$/.test(url.pathname) ? ' ' + (() => { try { return new URL(url.searchParams.get('u')).host; } catch { return ''; } })() : '');
-      const response = await handleApi(request, env, timedFetch, { skSent: skSentStore, vision, visionImport, visionBackfill, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, saveBoorus: local ? saveBoorus : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(async () => { await vision.close(); process.exit(75); }, 400) : null });
+      const response = await handleApi(request, env, timedFetch, { skSent: skSentStore, tagCounts: tagCountStore, vision, visionImport, visionBackfill, visionVotes, foryou, artists, posts, profiles, library, saveVars: local ? saveVars : null, saveBoorus: local ? saveBoorus : null, restart: (process.env.PHONE_MODE === '1' || process.env.RESTARTABLE === '1') ? () => setTimeout(async () => { await vision.close(); process.exit(75); }, 400) : null });
       res.writeHead(response.status, { ...SECURITY_HEADERS, ...Object.fromEntries(response.headers) });
       const ttfb = Date.now() - t0; let bytes = 0;
       res.on('close', () => logLine(`api     ${response.status} ttfb=${ttfb}ms total=${Date.now() - t0}ms ${(bytes / 1024) | 0}KB ${req.method} ${tag}${res.writableFinished ? '' : ' ABORTED'}`));
