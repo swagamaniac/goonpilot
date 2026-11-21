@@ -2508,6 +2508,7 @@ const viewer = {
       }).catch(() => { box.textContent = ''; });
       load(4);
     }
+    const cntPending = {}; // tags the site's post data gave no count for: looked up lazily (cached on the server; sites without a lookup just show nothing)
     for (const type of ['artist', 'character', 'copyright', 'species', 'general', 'meta']) {
       const tags = p.tags.filter(t => t.type === type); if (!tags.length) continue;
       const sec = el('section'); sec.append(el('h3', null, type));
@@ -2524,6 +2525,7 @@ const viewer = {
         const or = el('button', 'mini or', '~'); or.title = 'Add as OR'; or.setAttribute('aria-label', 'Add ' + t.name + ' as OR');
         or.onclick = () => addTerm(t, '~', type);
         row.append(nb); if (cnt) row.append(cnt);
+        else if (type !== 'meta' && !p.tags.some(x => x.count)) { const ph = el('span', 'tagcnt'); row.append(ph); (cntPending[t.name.toLowerCase()] ||= []).push(ph); }
         if (type !== 'meta') {
           const fav = !!S.artists[artistKey(t.name)], heart = el('button', 'mini' + (fav ? ' on' : ''), fav ? '♥' : '♡');
           heart.title = fav ? 'Remove from favorites' : 'Add to favorites'; heart.onclick = () => toggleArtist(t.name, type === 'artist' ? 'artist' : type === 'character' ? 'character' : 'tag', p.site); row.append(heart);
@@ -2536,6 +2538,16 @@ const viewer = {
       });
       d.append(sec);
     }
+    (async () => {
+      const names = Object.keys(cntPending).slice(0, 24);
+      for (let i = 0; i < names.length; i += 8) {
+        const chunk = names.slice(i, i + 8); if (!d.isConnected) return;
+        try {
+          const { counts } = await fetch(`/api/tagcounts?site=${encodeURIComponent(p.site)}&names=${encodeURIComponent(chunk.join(' '))}`, { headers: { 'x-goonpilot': '1' } }).then(r => r.json());
+          for (const n of chunk) if (counts?.[n] > 0) cntPending[n].forEach(s => { s.textContent = fmt(counts[n]); });
+        } catch { return; }
+      }
+    })();
     const back = el('button', 'btn ghost', '← Back to post'); back.onclick = () => this.outer.scrollTo({ left: 0, behavior: 'smooth' });
     d.append(back);
   },
