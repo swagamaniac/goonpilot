@@ -210,7 +210,7 @@ const api = {
     // Only non-default params are sent; the server treats missing ones as the defaults. pr (screen ratio) is only used by "Fits my screen".
     const all = {
       inc: q.include.join(' '), exc: q.exclude.join(' '), or: q.or.join(' '), og: q.orGroups.map(g => g.join(' ')).join('|'), sort: q.sort, rating: q.rating,
-      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && ['feed', 'user'].includes(S.skRec) && !q.include.length && !q.exclude.length && !q.or.length && !q.orGroups.length ? { rec: S.skRec === 'user' ? 'u' : '1' } : {}), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
+      min: String(q.minScore || 0), max: String(q.maxScore || 0), ...(site === 'sankaku' && S.skThreshold ? { th: '0' } : {}), ...(site === 'sankaku' && S.skBooks ? { bk: 'always' } : {}), ...(site === 'sankaku' && /^sk(feed|user)$/.test(q.sort) && !q.include.length && !q.exclude.length && !q.or.length && !q.orGroups.length ? { rec: q.sort === 'skuser' ? 'u' : '1' } : {}), ...(S.aiTagFix ? {} : { ait: '0' }), ...(blockedList().length || S.blockTags.length ? { bl: blockedList().join('|'), blt: S.blockTags.join(' '), bls: S.blockSkip.join(' ') } : {}), page: String(q.page), limit: String(q.limit), shape: q.shape || shapeNow(), pr: q.sort === 'phone' ? String(Math.round(innerWidth / innerHeight * 1000) / 1000) : ''
     };
     const skip = { sort: 'id', rating: 'all', min: '0', max: '0', page: '0', shape: 'any' };
     const p = new URLSearchParams(Object.entries(all).filter(([k, v]) => v && v !== skip[k]));
@@ -1134,6 +1134,8 @@ $('searchBtn').onclick = () => { newSearch(); };
 
 function syncFilterUi() {
   // Sankaku-only sorts (Settings > Sites > Sankaku, off by default): shown only when enabled, otherwise fall back to Newest.
+  // One-time migration of the old "Sankaku recommendations" setting: it became two sorts, only usable with extra sorts on.
+  if (S.skRec) { if (S.skSorts && S.sort === 'id') S.sort = S.skRec === 'user' ? 'skuser' : 'skfeed'; S.skRec = false; store.set('skRec', false); }
   // Options are removed from / re-added to the select (hidden/disabled options show greyed out on mobile browsers).
   const sel = $('sort');
   if (!sel._sk) { sel._sk = {}; sel.querySelectorAll('option[data-sk]').forEach(o => { o.hidden = o.disabled = false; sel._sk[o.value] = o; o.remove(); }); }
@@ -1141,7 +1143,7 @@ function syncFilterUi() {
     if (!S.skSorts) o.remove();
     else if (!o.parentNode) { const ref = v === 'popular' ? sel.querySelector('option[value="updated"]') : null; sel.insertBefore(o, ref); }
   }
-  if (!S.skSorts && /^(popular|recfav|recvote)$/.test(S.sort)) S.sort = 'id';
+  if (!S.skSorts && /^(popular|recfav|recvote|skfeed|skuser)$/.test(S.sort)) S.sort = 'id';
   $('sort').value = S.sort; $('minScore').value = S.minScore; $('scoreDir').textContent = (S.scoreMax ? 'Max' : 'Min') + ' score ⇅';
   [...$('rating').children].forEach(x => x.classList.toggle('on', x.dataset.r === S.rating));
   [...$('orient').children].forEach(x => x.classList.toggle('on', x.dataset.o === S.orient));
@@ -1955,12 +1957,6 @@ function renderSiteList() {
   bcb.onchange = () => { S.skBooks = bcb.checked; store.set('skBooks', S.skBooks); markDirty(); };
   bk.append(bcb, ' Sankaku: hide comic/book pages everywhere');
   sd.append(bk, el('p', 'hint', 'Off: like the site, book pages are hidden only on big tags. On: always hidden (except pool: and fav: searches).'));
-  const rc = el('label'), rcs = el('select');
-  for (const [v, t] of [['off', 'off'], ['feed', 'For You feed'], ['user', 'Recommended for me']]) { const o = el('option'); o.value = v; o.textContent = t; rcs.append(o); }
-  rcs.value = ['feed', 'user'].includes(S.skRec) ? S.skRec : 'off';
-  rcs.onchange = () => { S.skRec = rcs.value === 'off' ? false : rcs.value; store.set('skRec', S.skRec); markDirty(); };
-  rc.append('Sankaku recommendations: ', rcs);
-  sd.append(rc, el('p', 'hint', "Uses your Sankaku account. For You feed = the site's For You tab; Recommended for me = recommended_for:<your name> (based on your Sankaku favs/votes). Only used when you search Sankaku with no tags of your own (your blocklist still applies); searches with tags stay normal. Read-only: nothing is sent to Sankaku."));
   const sf = el('label'), sfb = el('input'); sfb.type = 'checkbox'; sfb.checked = S.skFav;
   sfb.onchange = () => { S.skFav = sfb.checked; store.set('skFav', S.skFav); };
   sf.append(sfb, ' Sankaku: sync likes to your Sankaku favorites');
@@ -2003,8 +1999,8 @@ function renderSiteList() {
   sd.append(imp, el('p', 'hint', 'Manual, one time as often as you like. Imported favorites count as likes for For you (unless "Sankaku likes" is set to Ignored). Posts without a file on Sankaku are skipped.'));
   const ss = el('label'), ssb = el('input'); ssb.type = 'checkbox'; ssb.checked = S.skSorts;
   ssb.onchange = () => { S.skSorts = ssb.checked; store.set('skSorts', S.skSorts); syncFilterUi(); markDirty(); };
-  ss.append(ssb, ' Sankaku: extra sorts (popular, recently favorited, recently voted)');
-  sd.append(ss, el('p', 'hint', 'Adds three Sort choices that mainly make sense on Sankaku. Popular is hidden otherwise. Off by default. On other sites Popular still works where the site has it; the other two act like Newest.'));
+  ss.append(ssb, ' Sankaku: extra sorts (popular, recently favorited, recently voted, recommended)');
+  sd.append(ss, el('p', 'hint', "Adds Sort choices that mainly make sense on Sankaku. Off by default. On other sites Popular still works where the site has it; the others act like Newest. 'Recommended (For You feed)' and 'Recommended for me' use your Sankaku account and only apply to a Sankaku search with no tags of your own (your blocklist still applies; searches with tags stay normal). Read-only: nothing is sent to Sankaku."));
   const sa = el('label'), sab = el('input'); sab.type = 'checkbox'; sab.checked = S.skArtist;
   sab.onchange = () => { S.skArtist = sab.checked; store.set('skArtist', S.skArtist); };
   sa.append(sab, ' Sankaku: skip artist searches unless the artist is known to be there');
