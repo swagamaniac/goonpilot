@@ -2539,12 +2539,13 @@ const viewer = {
       d.append(sec);
     }
     (async () => {
-      const names = Object.keys(cntPending).slice(0, 60);
+      const mem = (S.tagCnt ||= new Map()), fresh = (k) => { const e = mem.get(k); return e && e.t > Date.now() - 6048e5 ? e : null; }; // counts seen in the last 7 days: no request at all
+      const names = Object.keys(cntPending).filter(n => { const e = fresh(p.site + '|' + n); if (e?.v > 0) cntPending[n].forEach(s => { s.textContent = fmt(e.v); }); return !e; }).slice(0, 60);
       for (let i = 0; i < names.length; i += 8) {
         const chunk = names.slice(i, i + 8); if (!d.isConnected) return;
         try {
           const { counts } = await fetch(`/api/tagcounts?site=${encodeURIComponent(p.site)}&names=${encodeURIComponent(chunk.join(' '))}`, { headers: { 'x-goonpilot': '1' } }).then(r => r.json());
-          for (const n of chunk) if (counts?.[n] > 0) cntPending[n].forEach(s => { s.textContent = fmt(counts[n]); });
+          for (const n of chunk) { mem.set(p.site + '|' + n, { v: counts?.[n] || 0, t: Date.now() }); if (counts?.[n] > 0) cntPending[n].forEach(s => { s.textContent = fmt(counts[n]); }); }
         } catch { return; }
       }
     })();
