@@ -241,7 +241,7 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
   } catch (err) { return fail(err); }
 }
 
-const tagCache = new Map();
+const tagCache = new Map(), countCache = new Map();
 export async function checkTags(source, names, env, fetchImpl = fetch) {
   const out = {};
   for (const raw of names.slice(0, 12)) {
@@ -497,6 +497,22 @@ export async function handleApi(request, env, fetchImpl = fetch, ctx = {}) {
 
   if (url.pathname === '/api/status') {
     return json({ types: CUSTOM_TYPES, blocklist: Object.fromEntries(GROUPS.map(g => [g, TAGS[g]])), sources: Object.values(SOURCES).map(s => ({ id: s.id, label: s.label, configured: s.configured(env), auth: s.auth(env), keys: s.envKeys.map(k => ({ name: k, set: !!env[k] })), ...(s.custom ? { custom: true, type: s.type, base: s.base } : {}) })) });
+  }
+
+  // Cached tag post-count lookup via the site's tag suggest endpoint. Sites with a suggest lookup only;
+  // max 8 names, one polite suggest request per uncached name, memory cache for 7 days. Failures just leave the name out.
+  if (url.pathname === '/api/tagcounts') {
+    const source = SOURCES[url.searchParams.get('site') || ''], out = {};
+    if (!source?.suggest || !source.configured(env)) return json({ counts: out });
+    for (const raw of list(url.searchParams.get('names')).slice(0, 8)) {
+      const name = raw.toLowerCase(), ck = source.id + '|' + name, hit = countCache.get(ck);
+      if (hit && hit.t > Date.now() - 6048e5) { if (hit.v != null) out[name] = hit.v; continue; }
+      let v = null;
+      try { const sug = await polite(source.id, () => source.suggest(name, env, fetchImpl), source.minGap || 600); const e = sug.find(x => String(x.name).toLowerCase() === name); v = e && e.count > 0 ? e.count : null; }
+      catch { continue; }
+      countCache.set(ck, { v, t: Date.now() }); if (v != null) out[name] = v;
+    }
+    return json({ counts: out });
   }
 
   const m = /^\/api\/([a-z0-9_-]+)\/(posts|suggest|media|tagcheck)$/.exec(url.pathname);
