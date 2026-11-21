@@ -2525,7 +2525,7 @@ const viewer = {
         const or = el('button', 'mini or', '~'); or.title = 'Add as OR'; or.setAttribute('aria-label', 'Add ' + t.name + ' as OR');
         or.onclick = () => addTerm(t, '~', type);
         row.append(nb); if (cnt) row.append(cnt);
-        else if (type !== 'meta' && !p.tags.some(x => x.count)) { const ph = el('span', 'tagcnt'); row.append(ph); (cntPending[t.name.toLowerCase()] ||= []).push(ph); }
+        else if (type !== 'meta') { const ph = el('span', 'tagcnt'); row.append(ph); (cntPending[t.name.toLowerCase()] ||= []).push(ph); }
         if (type !== 'meta') {
           const fav = !!S.artists[artistKey(t.name)], heart = el('button', 'mini' + (fav ? ' on' : ''), fav ? '♥' : '♡');
           heart.title = fav ? 'Remove from favorites' : 'Add to favorites'; heart.onclick = () => toggleArtist(t.name, type === 'artist' ? 'artist' : type === 'character' ? 'character' : 'tag', p.site); row.append(heart);
