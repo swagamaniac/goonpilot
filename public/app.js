@@ -1134,7 +1134,13 @@ $('searchBtn').onclick = () => { newSearch(); };
 
 function syncFilterUi() {
   // Sankaku-only sorts (Settings > Sites > Sankaku, off by default): shown only when enabled, otherwise fall back to Newest.
-  document.querySelectorAll('#sort option[data-sk]').forEach(o => { o.hidden = o.disabled = !S.skSorts; });
+  // Options are removed from / re-added to the select (hidden/disabled options show greyed out on mobile browsers).
+  const sel = $('sort');
+  if (!sel._sk) { sel._sk = {}; sel.querySelectorAll('option[data-sk]').forEach(o => { o.hidden = o.disabled = false; sel._sk[o.value] = o; o.remove(); }); }
+  for (const [v, o] of Object.entries(sel._sk)) {
+    if (!S.skSorts) o.remove();
+    else if (!o.parentNode) { const ref = v === 'popular' ? sel.querySelector('option[value="updated"]') : null; sel.insertBefore(o, ref); }
+  }
   if (!S.skSorts && /^(popular|recfav|recvote)$/.test(S.sort)) S.sort = 'id';
   $('sort').value = S.sort; $('minScore').value = S.minScore; $('scoreDir').textContent = (S.scoreMax ? 'Max' : 'Min') + ' score ⇅';
   [...$('rating').children].forEach(x => x.classList.toggle('on', x.dataset.r === S.rating));
