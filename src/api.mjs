@@ -208,6 +208,14 @@ async function handleForYou(request, url, env, fetchImpl, fy, posts, profiles, v
         profiles.resetAllLearning(); return json({ ok: true });
       }
       if (route === 'seen') { if (vision && typeof b.md5 === 'string') vision.want(b.md5); }
+      if (route === 'score') { // predicted scores for normal-search posts; local only, nothing is stored or sent anywhere
+        const sc = fy.evalScorer({ blend: true }), out = {};
+        for (const p of (Array.isArray(b.posts) ? b.posts : []).slice(0, 200)) {
+          if (!p || !Array.isArray(p.tags) || !p.tags.length) continue;
+          try { out[`${p.site}:${p.id}`] = Math.round(sc({ site: String(p.site), tags: p.tags.map(t => ({ name: String(t.name), type: String(t.type || 'general') })), rating: p.rating, type: p.type, md5: p.md5 })*1000)/1000; } catch {}
+        }
+        return json({ scores: out });
+      }
       if (route === 'seen') return json({ ok: fy.markViewed({ site: String(b.site), id: b.id, post: b.post, md5: b.md5 }) });
       if (route === 'snap') {
         if (!posts || !/^[a-z0-9_-]{1,20}$/.test(String(b.site)) || !Number.isInteger(b.id)) return json({ error: 'Bad post' }, 400);

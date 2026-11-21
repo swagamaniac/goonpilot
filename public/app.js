@@ -27,7 +27,7 @@ const UI = (() => {
 // --- end input-kind helper
 
 // Settings that live in data/ and follow you across devices (the lists below sync too).
-const PREFS = ['aheadScreens', 'infinite', 'tagSearch', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skSorts', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
+const PREFS = ['predOn', 'predMode', 'predVal', 'aheadScreens', 'infinite', 'tagSearch', 'autoDelay', 'autoNext', 'directMedia', 'dupes', 'fill', 'fillFit', 'fyBatch', 'fyDebug', 'gDouble', 'gSwipe', 'hiddenSites', 'hintsOn', 'hotkeys', 'loopVideos', 'orient', 'original', 'pageSize', 'aiTagFix', 'blocked', 'blockSkip', 'blockTags', 'skBooks', 'skRec', 'skFav', 'skArtist', 'skSorts', 'skThreshold', 'sound', 'tbarOn', 'videoQuality', 'favCatsArtist', 'favCatsCharacter', 'favCatsTag', 'superCats', 'secOrder'];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('goonpilot:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('goonpilot:' + k, JSON.stringify(v)); } catch {} if (k === 'history' || k === 'saved' || k === 'supers') pushUi(k); else if (PREFS.includes(k)) { prefDirty.add(k); pushUi('prefs'); } }
@@ -110,6 +110,7 @@ const S = {
   sort: st.sort || 'id', rating: st.rating || 'all', minScore: st.minScore || 0, scoreMax: !!st.scoreMax,
   pageSize: store.get('pageSize', 20),
   aheadScreens: store.get('aheadScreens', 3),
+  predOn: store.get('predOn', false), predMode: store.get('predMode', 'min'), predVal: store.get('predVal', 40),
   infinite: store.get('infinite', true),
   tagSearch: store.get('tagSearch', false),
   original: store.get('original', false),
@@ -341,7 +342,7 @@ function enterLiked(filter) {
   S.ctrl?.abort(); S.ctrl = new AbortController(); S.gen++;
   setMode('liked');
   S.active = { sites: [], liked: true }; S.feeds = {};
-  S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.loading = false; S.dirty = false;
+  S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.predHidden = []; S.loading = false; S.dirty = false;
   S.liked = { filter: filter || S.liked.filter || 'likes', offset: 0, total: 0, done: false, error: '', unavailable: 0 };
   $('results').replaceChildren(); render.status(); window.scrollTo(0, 0); renderLikedBar(); render.sites(); render.searchBtn();
   loadMore();
@@ -528,7 +529,7 @@ function enterForYou() {
   S.ctrl?.abort(); S.ctrl = new AbortController(); S.gen++;
   setMode('foryou');
   S.active = { sites: [], foryou: true }; S.feeds = {};
-  S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.loading = false; S.dirty = false; S.fy = { error: '' };
+  S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.predHidden = []; S.loading = false; S.dirty = false; S.fy = { error: '' };
   $('results').replaceChildren();
   render.sites(); render.searchBtn(); render.status(); window.scrollTo(0, 0);
   loadMore();
@@ -751,7 +752,7 @@ function newSearch(remember = true) {
   S.newKey = null; S.newSort = null;
   if (remember) recordHistory();
   S.feeds = Object.fromEntries(S.active.sites.map(s => [s, { page: 0, hasMore: true, error: '', hidden: 0 }]));
-  S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.loading = false; S.dirty = false;
+  S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.predHidden = []; S.loading = false; S.dirty = false;
   persistSearch();
   $('results').replaceChildren();
   render.chips(); render.sites(); render.searchBtn(); render.status();
@@ -794,6 +795,27 @@ async function checkMissing(site, gen) {
     if (missing.length && missing.length < names.length + 1) { S.feeds[site].missing = missing; render.endState(); }
   } catch {}
 }
+// Normal search only: hide posts the For you scorer predicts you won't like. Scored locally on your PC, fails open, never fetches extra pages.
+S.predHidden = [];
+async function predFilter(posts, gen) {
+  if (!S.predOn || !S.fyOn || !posts.length) return posts;
+  try {
+    const { scores } = await fyJson('score', { posts: posts.map(p => ({ site: p.site, id: p.id, tags: p.tags, rating: p.rating, type: p.type, md5: p.md5 })) });
+    if (gen !== S.gen) return posts;
+    const sc = p => scores?.[`${p.site}:${p.id}`];
+    { const v = posts.map(sc).filter(x => x !== undefined); if (v.length > 1) for (const p of posts) { const s = sc(p); if (s !== undefined) { p.topPct = Math.max(1, Math.ceil(100 * (v.filter(x => x > s).length + 1) / v.length)); p.pscore = Math.round(s * 100); } } }
+    let cut;
+    if (S.predMode === 'top') { const v = posts.map(sc).filter(x => x !== undefined).sort((a, b) => b - a); if (!v.length) return posts; cut = v[Math.max(0, Math.ceil(v.length * S.predVal / 100) - 1)]; }
+    else cut = S.predVal / 100;
+    const keep = [];
+    for (const p of posts) { const s = sc(p); if (s !== undefined && s < cut) S.predHidden.push(p); else keep.push(p); }
+    return keep;
+  } catch { return posts; }
+}
+function revealPredicted() {
+  const from = S.posts.length; S.posts.push(...S.predHidden); S.predHidden = [];
+  render.appendPosts(from); if (S.vOpen) viewer.appendSlides(from); render.status();
+}
 async function loadMore() {
   if (!S.active || S.loading) return;
   if (S.mode === 'foryou') return loadForYou();
@@ -824,7 +846,8 @@ async function loadMore() {
   if (gen !== S.gen) return;
   const merged = [], longest = Math.max(0, ...batches.map(b => b.length));
   for (let i = 0; i < longest; i++) for (const b of batches) if (b[i]) merged.push(b[i]);
-  const fresh = dedupe(merged);
+  const fresh = await predFilter(dedupe(merged), gen);
+  if (gen !== S.gen) return;
   trackNew(fresh);
   const from = S.posts.length;
   S.posts.push(...fresh);
@@ -903,6 +926,7 @@ const render = {
     }
     const total = ALL_SITES.reduce((a, k) => a + gates[k].total, 0);
     if (S.hiddenDupes) s.append(el('span', 'pill', `${S.hiddenDupes} duplicates hidden`));
+    if (S.predHidden?.length && S.mode !== 'foryou' && S.mode !== 'liked') { const b = el('button', 'pill', `${S.predHidden.length} hidden by predicted score · show`); b.type = 'button'; b.onclick = revealPredicted; s.append(b); }
     s.append(el('span', 'pill', `${total} requests`));
   },
   sites() {
@@ -975,6 +999,7 @@ const render = {
       media.append(img);
       if (p.type !== 'image') media.append(el('span', 'badge', p.type));
       if (p.isNew) media.append(el('span', 'badge new', 'new'));
+      if (S.predOn && p.topPct && S.mode !== 'foryou' && S.mode !== 'liked') { const b = el('span', 'badge pred', `top ${p.topPct}% · ${p.pscore}`); b.title = `Predicted score ${p.pscore}/100 (the number the threshold compares against). "top N%" is its rank among the scored posts of the batch it loaded with.`; media.append(b); }
       media.onclick = () => { if (S.sel) toggleSel(p, card); else viewer.open(i); };
       if (S.sel?.has(p.site + ':' + p.id)) card.classList.add('selected');
       const meta = el('div', 'meta');
@@ -1103,7 +1128,7 @@ q.addEventListener('keydown', e => {
 });
 // The app never searches on its own: this leaves the search view with nothing loaded, ready for the user to press Search.
 function idleSearch() {
-  S.ctrl?.abort(); S.gen++; S.active = null; S.feeds = {}; S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.loading = false; S.dirty = false;
+  S.ctrl?.abort(); S.gen++; S.active = null; S.feeds = {}; S.posts = []; S.keys = new Set(); S.md5s = new Set(); S.hiddenDupes = 0; S.predHidden = []; S.loading = false; S.dirty = false;
   setMode('search');
   $('results').replaceChildren(); render.chips(); render.sites(); render.searchBtn(); render.status(); render.endState(); window.scrollTo(0, 0);
 }
@@ -1466,6 +1491,17 @@ function renderFyTab(body) {
     queueMicrotask(() => foldGroups(body));
   }
 }
+function predSlider() {
+  const top = S.predMode === 'top', presets = top ? [5, 10, 15, 25, 40, 50] : [10, 25, 40, 50, 60, 75];
+  const box = el('div', 'predslider'), val = el('b', null, '');
+  const rng = el('input'); rng.type = 'range'; rng.min = 0; rng.max = 100; rng.step = 1;
+  const show = () => { val.textContent = S.predVal + (top ? '%' : ''); rng.value = S.predVal; };
+  const set = v => { S.predVal = Math.max(0, Math.min(100, Math.round(v))); store.set('predVal', S.predVal); show(); };
+  rng.oninput = () => set(+rng.value);
+  const chips = el('div', 'predchips'); for (const v of presets) { const c = el('button', 'chip', String(v)); c.type = 'button'; c.onclick = () => set(v); chips.append(c); }
+  box.append(el('div', null, top ? 'Keep top % of each loaded page: ' : 'Hide below predicted score (0–100): '), val, rng, chips);
+  show(); return box;
+}
 function renderSettingsTab(body) {
   {
     const pages = !!S.status?.pages;
@@ -1481,7 +1517,11 @@ function renderSettingsTab(body) {
       segField('Start loading more', [1, 2, 3, 5], S.aheadScreens, v => v + (v === 1 ? ' screen' : ' screens'), v => { S.aheadScreens = v; store.set('aheadScreens', v); observeSentinel(); }),
       el('p', 'hint', 'How far before the bottom of the feed the next page is requested. In fullscreen it loads when 5 posts remain.'),
       segField('Duplicate posts (same file, e.g. on two sites)', [false, true], S.dupes, v => v ? 'Show' : 'Hide', v => { S.dupes = v; store.set('dupes', v); markDirty(); }),
-      el('p', 'hint', 'Detected by the file checksum (MD5). Applies from your next search.')
+      el('p', 'hint', 'Detected by the file checksum (MD5). Applies from your next search.'),
+      segField('Hide posts below predicted score (normal search only)', [false, true], S.predOn, v => v ? 'On' : 'Off', v => { S.predOn = v; store.set('predOn', v); renderSheet(); }),
+      ...(!S.predOn ? [] : [segField('Hide mode', ['min', 'top'], S.predMode, v => v === 'min' ? 'Score below threshold' : 'Keep top % of each page', v => { S.predMode = v; store.set('predMode', v); renderSheet(); }),
+      predSlider(),
+      el('p', 'hint', 'Scored on your PC with the same model as For you; nothing leaves it. Applies to newly loaded pages only. It never loads extra pages to refill, so a strict setting can leave a page short: the pill under the search bar shows how many are hidden and reveals them. Posts without tags are never hidden. Off by default.')])
     ));
     const view = group('Fullscreen & video',
       segField('Image quality', [false, true], S.original, v => v ? 'Original' : 'Sample', v => { S.original = v; store.set('original', v); }),
